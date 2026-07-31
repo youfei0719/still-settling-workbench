@@ -1,0 +1,39 @@
+# Local source-control and editor state
+.git
+.github
+.agents
+.claude
+.copier
+.vscode
+.DS_Store
+
+# Local dependencies, build products, and test artifacts
+.venv
+.venv-model
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+frontend/blob-report
+backend/.venv
+backend/__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.log
+htmlcov
+coverage.xml
+
+# Runtime media, evaluation output, and local credentials never belong in an image
+.env
+.env.*
+!/.env.workbench.example
+evals
+tmp
+*.mp4
+*.wav
+*.aiff
+*.jpg
+*.jpeg
+*.png

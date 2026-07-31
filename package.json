@@ -1,0 +1,34 @@
+{
+  "name": "still-settling-workbench",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "acceptance:workbench": ".venv/bin/python backend/scripts/verify_workbench_acceptance.py",
+    "deps:workbench": ".venv/bin/python backend/scripts/verify_workbench_dependencies.py",
+    "dev": "npm run dev --workspace frontend",
+    "eval:workbench": "promptfoo eval -c evals/workbench/promptfooconfig.yaml --no-cache --no-table --no-progress-bar",
+    "eval:skills:release": "WORKBENCH_LLM_MODE=required .venv/bin/python backend/scripts/verify_skill_release.py",
+    "external-gates:workbench": ".venv/bin/python backend/scripts/verify_workbench_external_gates.py",
+    "lint": "npm run lint --workspace frontend",
+    "llm-smoke:workbench": ".venv/bin/python backend/scripts/verify_workbench_llm_smoke.py",
+    "model-env:workbench": ".venv/bin/python backend/scripts/setup_workbench_model_env.py",
+    "test": "npm run test --workspace frontend",
+    "test:ui": "npm run test:ui --workspace frontend",
+    "ui-smoke:workbench": "npm run test --workspace frontend",
+    "verify:workbench": "npm run acceptance:workbench && npm run deps:workbench && npm run llm-smoke:workbench && npm run eval:workbench && npm run build --workspace frontend && npm run ui-smoke:workbench && .venv/bin/python -m compileall backend/app backend/scripts",
+    "verify:workbench:models": "WORKBENCH_MODEL_WORKER_PYTHON=.venv-model/bin/python npm run verify:workbench",
+    "verify:workbench:final": ".venv/bin/python backend/scripts/verify_workbench_final_readiness.py",
+    "video-smoke:workbench": ".venv/bin/python backend/scripts/verify_workbench_video_smoke.py",
+    "video-smoke:workbench:models": "WORKBENCH_MODEL_WORKER_PYTHON=.venv-model/bin/python npm run video-smoke:workbench -- --with-spoken-content --timeout 300",
+    "workbench:logs": "bash scripts/workbench-local.sh logs",
+    "workbench:start": "bash scripts/workbench-local.sh start",
+    "workbench:status": "bash scripts/workbench-local.sh status",
+    "workbench:stop": "bash scripts/workbench-local.sh stop",
+    "workbench:summary": ".venv/bin/python backend/scripts/workbench_status_report.py"
+  },
+  "devDependencies": {
+    "promptfoo": "^0.121.19"
+  }
+}

@@ -1,0 +1,94 @@
+description: 依旧沉淀 v1 核心闭环离线回归测试
+
+prompts:
+  - |
+    {
+      "task": "{{task}}",
+      "title": "{{title}}",
+      "content": "{{content}}",
+      "input_type": "{{input_type}}",
+      "hotspot": "{{hotspot}}",
+      "account_type": "{{account_type}}",
+      "template_id": "{{template_id}}",
+      "duration_seconds": "{{duration_seconds}}",
+      "tone": "{{tone}}",
+      "goal": "{{goal}}"
+    }
+
+providers:
+  - id: file://provider.py
+
+defaultTest:
+  options:
+    provider: file://provider.py
+
+tests:
+  - description: 文本输入可以完成结构化脚本分析和模板沉淀
+    vars:
+      task: analysis
+      title: 样本：明星公开回应引发讨论
+      content: 你以为这只是一次普通回应吗？真正值得看的不是谁赢了，而是双方表达里的细节。先看时间线，再看评论区情绪，最后你会发现，大家争的其实是态度。你觉得这次回应体面吗？
+      input_type: text
+      hotspot: ""
+      account_type: ""
+      template_id: ""
+      duration_seconds: 45
+      tone: ""
+      goal: ""
+    assert:
+      - type: contains
+        value: '"task": "analysis"'
+      - type: contains
+        value: '"account_type": "娱乐吃瓜号"'
+      - type: contains
+        value: '"structure_count": 5'
+      - type: contains
+        value: '"export_has_markdown": true'
+
+  - description: 热点反推至少生成 3 个脚本版本并匹配模板
+    vars:
+      task: hotspot
+      title: ""
+      content: ""
+      input_type: text
+      hotspot: 某明星公开回应代言争议，粉丝和路人观点分裂
+      account_type: 娱乐吃瓜号
+      template_id: tpl_reversal
+      duration_seconds: 45
+      tone: 克制犀利但不造谣
+      goal: 引发评论区讨论事实和态度
+    assert:
+      - type: contains
+        value: '"task": "hotspot"'
+      - type: contains
+        value: '"scripts_count": 3'
+      - type: contains
+        value: '"matched_templates_count": 3'
+      - type: contains
+        value: '某明星公开回应代言争议'
+
+  - description: 风控能标记未经证实、隐私和攻击性表达
+    vars:
+      task: risk
+      title: ""
+      content: 网传这件事有未经证实的内幕，还涉及私生活细节，评论区让对方滚。
+      input_type: text
+      hotspot: ""
+      account_type: ""
+      template_id: ""
+      duration_seconds: 45
+      tone: ""
+      goal: ""
+    assert:
+      - type: contains
+        value: '"task": "risk"'
+      - type: contains
+        value: '"risk_passed": false'
+      - type: contains
+        value: '"risk_level": "high"'
+      - type: contains
+        value: '"未经证实"'
+      - type: contains
+        value: '"私生活"'
+      - type: contains
+        value: '"滚"'
