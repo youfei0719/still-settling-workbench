@@ -42,15 +42,17 @@ export function CodexSyncPanel({
     repositoryUrl
       .replace(/^https:\/\/github\.com\//, "")
       .replace(/\.git$/, "") || "尚未配置"
+  const installDirectory =
+    repositoryName.split("/").filter(Boolean).at(-1) || "writing-skills"
   const installCommand = useMemo(
     () =>
       repositoryUrl
-        ? `git clone ${repositoryUrl} ~/.agents/skills/douyin-writing-skills && bash ~/.agents/skills/douyin-writing-skills/scripts/install.sh`
+        ? `git clone ${repositoryUrl} ~/.agents/skills/${installDirectory} && bash ~/.agents/skills/${installDirectory}/scripts/install.sh`
         : "完成首次配置后生成安装命令",
-    [repositoryUrl],
+    [installDirectory, repositoryUrl],
   )
   const updateCommand =
-    "python3 ~/.agents/skills/douyin-writing-skills/scripts/load_latest.py"
+    `python3 ~/.agents/skills/${installDirectory}/scripts/load_latest.py`
 
   const handleCopy = (kind: "install" | "update", command: string) => {
     void copyText(command)
@@ -77,7 +79,7 @@ export function CodexSyncPanel({
       <div className="codex-sync-summary">
         <div>
           <span>站内同步包</span>
-          <strong>{skillPack?.skill_name || "douyin-writing-skills"}</strong>
+          <strong>{skillPack?.skill_name || "尚未命名"}</strong>
         </div>
         <div>
           <span>当前版本</span>

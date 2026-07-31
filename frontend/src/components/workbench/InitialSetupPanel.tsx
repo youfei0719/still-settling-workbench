@@ -64,7 +64,7 @@ export function InitialSetupPanel({
   const [modelTesting, setModelTesting] = useState(false)
   const [repositoryMode, setRepositoryMode] = useState<"connect" | "create" | "local">("connect")
   const [repositoryUrl, setRepositoryUrl] = useState("")
-  const [repositoryName, setRepositoryName] = useState("douyin-writing-skills")
+  const [repositoryName, setRepositoryName] = useState("still-settling-skills")
   const [repositoryVisibility, setRepositoryVisibility] = useState<"private" | "public">("private")
   const [repositoryParent, setRepositoryParent] = useState("")
 
