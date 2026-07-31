@@ -42,8 +42,9 @@ export function CodexSyncPanel({
     repositoryUrl
       .replace(/^https:\/\/github\.com\//, "")
       .replace(/\.git$/, "") || "尚未配置"
+  const repositoryPathParts = repositoryName.split("/").filter(Boolean)
   const installDirectory =
-    repositoryName.split("/").filter(Boolean).at(-1) || "writing-skills"
+    repositoryPathParts[repositoryPathParts.length - 1] || "writing-skills"
   const installCommand = useMemo(
     () =>
       repositoryUrl

@@ -1,35 +1,205 @@
 # 依旧沉淀
 
-短视频写作 Skill 工作台。依旧沉淀从可验证的授权来源取得真实稿件，提炼可复用的写法结构；经过评测和人工复核后，用户可手动发布到自己的 GitHub Skill 仓库或仅保存在本机。
+依旧沉淀是一个本地优先的短视频写作 Skill 工作台。它把经过授权、可验证的视频来源转成真实稿件，提炼可跨题材复用的写法结构，并在人工复核后发布到用户自己选择的 GitHub Skill 仓库或仅保存在本机。
 
-## Skill 资产主线
+项目不把标题、描述或用户手输文本伪装成“已提取稿件”。无法取得真实内容时，流程会明确停止，而不是继续生成看似可信的结果。
 
-`授权来源 -> 真实稿件 -> 结构沉淀 -> 质量复核 -> 正式版本 -> 发布与加载`
+## 适合谁
 
-每一步都有明确边界：未取得真实稿件不会拆解，未通过复核的候选 Skill 不会被发布，发布始终需要用户手动确认。
+- 需要把高质量短视频的结构能力沉淀为团队资产的内容运营、编导和内容策略团队。
+- 想让 Codex 或其他 Agent 按经过审核的写作结构工作，而不是反复复制提示词的个人创作者。
+- 需要把模型连接、来源证据、人审和 GitHub 发布放在同一个本地工作台管理的团队。
 
-## Local setup
+## 核心能力
+
+| 能力 | 做什么 | 结果 |
+| --- | --- | --- |
+| 来源提取 | 接收抖音分享文案或 `v.douyin.com` 短链，优先使用本机浏览器会话提取公开视频 | 视频、音频、关键帧和可分析稿件 |
+| 稿件校准 | 可选 FunASR 口播转写和 PaddleOCR 硬字幕识别 | 带来源和质量状态的真实稿件 |
+| 结构沉淀 | 拆解钩子、推进、论证、情绪节奏、结尾、适用场景和不可用边界 | 可审核的写作 Skill 草稿 |
+| 质量复核 | 记录来源证据、真实模型评测和人工主审结果 | 候选或正式版本，而不是未验证的“万能模板” |
+| 写作交付 | 用已审核结构生成可填写的短视频脚本框架，进行风险诊断、版本维护和导出 | 可继续编辑、复核和交付的工作稿 |
+| 发布与加载 | 连接已有 GitHub 仓库、由应用创建新仓库，或仅保存在本机 | 版本化 Skill runtime 和动态安装命令 |
+
+## 工作流
+
+```mermaid
+flowchart LR
+    A[授权来源] --> B[真实稿件]
+    B --> C[结构沉淀]
+    C --> D[质量复核]
+    D --> E[正式版本]
+    E --> F[发布与加载]
+```
+
+正式发布需要满足当前发布门禁：
+
+1. 至少 3 个授权来源案例，证明结构不是单个样本的偶然写法。
+2. 真实模型发布评测通过，确认结构化输出可用。
+3. 内容主审批准，明确适用范围、风险和复用边界。
+
+发布始终由用户手动触发。沉淀、保存或主审不会自动推送到 GitHub。
+
+## 隐私与安全
+
+- 开源仓库默认是空资产库，不包含真实 Skill、稿件、来源、评测报告、诊断记录或媒体文件。
+- API Key 和可选抖音 Cookie 只保存到系统钥匙串；系统钥匙串不可用时，它们仅在当前服务进程内保存。
+- 设置 API 不回显密钥。环境变量优先于本机设置，适合 Docker、CI 或管理员托管环境。
+- GitHub Token 不会由应用保存。应用内创建或发布 GitHub Skill 仓库依赖用户已登录的 `gh` CLI。
+- 仅处理你有权访问、使用和沉淀的来源内容。公开链接也可能因地区、作品权限或平台限制而无法下载；此时请停止并补充合法来源，不要绕过访问限制。
+
+## 快速开始
+
+### 前置条件
+
+当前本机启动脚本以 macOS 或 Linux 的 `zsh` 和 `screen` 为基准。Windows 尚未作为受支持的启动环境验证。
+
+- Python 3.14
+- Node.js 24 或更新版本
+- [uv](https://docs.astral.sh/uv/)
+- `screen`
+- `ffmpeg`（必需，用于本地媒体处理）
+- 可选：`yt-dlp`、FunASR、PaddleOCR、GitHub CLI `gh`
+
+macOS 可先安装基础依赖：
 
 ```bash
+brew install ffmpeg screen
+python3 -m pip install --user yt-dlp
+```
+
+### 安装并启动
+
+```bash
+git clone https://github.com/youfei0719/still-settling-workbench.git
+cd still-settling-workbench
+
 cp .env.example .env
 cp .env.workbench.example .env.workbench.local
-npm install
-uv sync --project backend
+
+uv venv .venv --python 3.14
+source .venv/bin/activate
+uv sync --project backend --active --locked
+npm ci
+
 npm run workbench:start
 ```
 
-打开 `http://127.0.0.1:5173/`，进入“系统诊断”完成首次配置：模型连接，以及连接已有 GitHub 仓库、创建 GitHub 仓库或仅本地保存三种发布方式之一。抖音会话为可选配置。
-
-密钥与 Cookie 不会写入项目文件。支持系统钥匙串时会保存到操作系统安全存储；否则仅在当前服务运行期间有效。
-
-## Open-source release check
+打开 <http://127.0.0.1:5173/>。启动脚本会在后台分别运行 API 和前端；可用以下命令查看状态、日志和停止服务：
 
 ```bash
+npm run workbench:status
+npm run workbench:logs
+npm run workbench:stop
+```
+
+### 手动启动
+
+不使用 `screen` 时，在两个终端分别运行：
+
+```bash
+source .venv/bin/activate
+python scripts/dev-workbench-api.py
+```
+
+```bash
+npm run dev --workspace frontend -- --host 127.0.0.1
+```
+
+## 首次配置
+
+进入工作台的“系统诊断 -> 首次配置”，按需要完成以下配置。
+
+### 1. 模型连接
+
+填写模型模式、API Base 和 API Key 后，点击“保存并拉取模型”。应用会请求兼容的 `/models` 接口，排除嵌入、音频、图像等非文本模型，并推荐一个适合中文结构化输出的候选模型。你仍可自行选择模型，并通过“测试模型连接”确认真实调用可用。
+
+不使用外部模型时选择 `offline`，应用只使用本地确定性 fallback；需要强制真实模型时选择 `required`。
+
+### 2. Skill 发布项目
+
+选择一种发布方式：
+
+- **连接已有 GitHub 仓库**：粘贴完整的 `https://github.com/owner/repository` 地址，应用会 clone 并校验 remote、分支和本机 Git 状态。
+- **创建 GitHub 仓库**：填写名称和可见性。请先在终端完成 `gh auth login`，应用会用当前 GitHub 身份创建仓库并保存本机发布设置。
+- **仅本地保存**：创建一个本地 Skill 仓库，不会连接或上传到 GitHub。
+
+通过“验证发布”后，才可在“团队 Codex 同步”中手动发布正式 Skill。安装和更新命令会根据该用户实际配置的仓库地址动态生成。
+
+### 3. 抖音会话与媒体能力
+
+默认优先使用本机 Chrome 会话解析公开链接。Cookie 是可选项，只在作品确实需要有效会话时填写。链接提取依赖 `yt-dlp`，也支持配置兼容的 `jiji262/douyin-downloader`；ASR 和 OCR 是独立可选模型，不会阻塞基础工作流。
+
+## 推荐使用方式
+
+1. 在“沉淀写作 Skill”粘贴完整抖音分享文案或短链。
+2. 等待链接识别、媒体提取和真实稿件准备完成；失败时先根据诊断补齐合法来源或本机依赖。
+3. 审阅结构拆解，确认它表达的是可迁移的写法能力，而不是逐句仿写来源内容。
+4. 在“写作 Skill 库”持续补充同结构的授权来源，运行发布评测并完成主审。
+5. 点击“检查并申请正式并同步 GitHub”，或选择仅本地发布。
+6. 团队成员使用生成的安装命令加载最新正式版本；候选和已退役 Skill 不会进入稳定 runtime。
+
+## 配置参考
+
+`.env` 只保存通用本地应用配置。`.env.workbench.local` 用于本机工作台能力；两者都被 Git 忽略。
+
+| 场景 | 配置项 |
+| --- | --- |
+| 模型 | `WORKBENCH_LLM_MODE`、`WORKBENCH_LLM_MODEL`、`WORKBENCH_LLM_API_BASE`、`WORKBENCH_LLM_API_KEY` |
+| 数据目录 | `WORKBENCH_DATA_DIR`、`WORKBENCH_DB_MODE` |
+| 视频提取 | `WORKBENCH_DOUYIN_DOWNLOADER_*`、`WORKBENCH_YTDLP_COOKIES_FROM_BROWSER` |
+| ASR/OCR | `WORKBENCH_ASR_MODE`、`WORKBENCH_OCR_MODE`、`WORKBENCH_MODEL_WORKER_PYTHON` |
+| 发布 | `DOUYIN_WRITING_SKILLS_REPO`、`DOUYIN_WRITING_SKILLS_REMOTE_URL`、`DOUYIN_WRITING_SKILLS_BRANCH` |
+
+优先在界面的“首次配置”完成模型和发布设置。环境变量只适合自动化部署、CI 或需要由管理员统一管理配置的场景。
+
+## 常见问题
+
+### 链接识别成功但没有真实稿件
+
+这表示系统已识别出链接，但没有取得足够可靠的视频内容。检查 `yt-dlp` 或下载器配置、公开可访问性、本机浏览器会话，以及 `ffmpeg` 是否可用。系统不会根据标题或描述猜测稿件。
+
+### 为什么不能立刻发布一个 Skill
+
+单个爆款的表达很可能不可迁移。3 个授权来源、模型评测和主审分别验证“证据够不够”“结构能否稳定执行”“是否适合团队复用”。未通过门禁的候选仍可保存在本机继续完善，但不能进入公开稳定包。
+
+### API Key 会上传到 GitHub 吗
+
+不会。界面输入的 API Key 和 Cookie 不写入仓库，也不会在接口响应中回显。请不要手动把真实凭据填入 `.env.example`、截图、Issue 或 Pull Request。
+
+### GitHub 发布被拒绝
+
+确认本机已安装 Git、`gh` 且 `gh auth status` 成功；本地 Skill 仓库必须干净，配置的 remote URL 和本机 `origin` 必须一致，发布分支必须存在。
+
+## 验证与开发
+
+```bash
+# 前端类型检查与构建
+npm run build --workspace frontend
+
+# 后端单元测试
+uv run --project backend pytest backend/unit_tests
+
+# 本机依赖检查
+npm run deps:workbench
+
+# 公开发布前的脱敏检查
 uv run --project backend python scripts/verify-open-source-release.py
 ```
 
-检查通过后，在新的空 Git 仓库中提交代码。不要推送当前模板仓库的既有 Git 历史。
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。不要提交真实来源、媒体、Skill 资产、评测报告、API Key、Cookie 或本机路径。
+
+## 项目结构
+
+```text
+backend/                 FastAPI API、提取链路、质量门禁和本机设置服务
+frontend/                React 工作台
+scripts/                 本机启动与开源发布检查
+evals/workbench/         仅包含可公开的评测配置和提供方代码
+.env.example             通用本机配置示例
+.env.workbench.example   工作台能力配置示例
+```
 
 ## License
 
-MIT. This project retains the upstream FastAPI template copyright notice in [LICENSE](LICENSE).
+MIT。项目保留 FastAPI Full Stack Template 的上游版权声明，详见 [LICENSE](LICENSE)。
