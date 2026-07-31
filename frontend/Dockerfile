@@ -1,5 +1,5 @@
 # Stage 0, build the React workbench with the lockfile used in local verification.
-FROM node:24-bookworm-slim AS build-stage
+FROM node:25-bookworm-slim AS build-stage
 
 WORKDIR /app
 
