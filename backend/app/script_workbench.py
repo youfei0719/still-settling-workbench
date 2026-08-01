@@ -3770,7 +3770,24 @@ def pick_template(account_type: str) -> TemplatePattern:
     for template in TEMPLATES:
         if template.account_type == account_type:
             return template
-    return TEMPLATES[0]
+    if TEMPLATES:
+        return TEMPLATES[0]
+    return TemplatePattern(
+        id="system-analysis-draft",
+        name="通用分析草案",
+        account_type=account_type,
+        hotspot_types=["待沉淀素材"],
+        applicable_scenes=["首次分析", "尚未保存写作 Skill 的素材"],
+        unsuitable_scenes=[],
+        skeleton=["明确问题", "补充事实", "组织观点", "收束互动"],
+        hook_formula="先说清这段素材最值得讨论的判断。",
+        emotion_rhythm="疑问 -> 信息增量 -> 判断",
+        ending_formula="用一个基于公开信息的问题收束。",
+        risk_boundary="仅根据用户提供或已核实的公开信息分析。",
+        quality_score=0,
+        usage_count=0,
+        status="candidate",
+    )
 
 
 def pick_template_by_id(

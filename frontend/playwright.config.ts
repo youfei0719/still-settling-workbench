@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test"
 
+const apiPort = 18_000
+const frontendPort = 15_173
+const apiUrl = `http://127.0.0.1:${apiPort}`
+
 export default defineConfig({
   testDir: "./tests",
   testMatch: /workbench\.spec\.ts/,
@@ -10,7 +14,7 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? "blob" : "list",
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: `http://127.0.0.1:${frontendPort}`,
     trace: "on-first-retry",
   },
   projects: [
@@ -28,15 +32,15 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "cd .. && .venv/bin/python scripts/dev-workbench-api.py",
-      url: "http://127.0.0.1:8000/openapi.json",
-      reuseExistingServer: true,
+      command: `cd .. && WORKBENCH_LLM_MODE=offline WORKBENCH_API_PORT=${apiPort} WORKBENCH_FRONTEND_PORT=${frontendPort} WORKBENCH_DATA_DIR=$(mktemp -d) .venv/bin/python scripts/dev-workbench-api.py`,
+      url: `${apiUrl}/openapi.json`,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     {
-      command: "npm run dev -- --host 127.0.0.1",
-      url: "http://127.0.0.1:5173",
-      reuseExistingServer: true,
+      command: `VITE_API_URL=${apiUrl} npm run dev -- --host 127.0.0.1 --port ${frontendPort}`,
+      url: `http://127.0.0.1:${frontendPort}`,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

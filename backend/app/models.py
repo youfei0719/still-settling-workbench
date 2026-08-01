@@ -258,7 +258,10 @@ class WorkbenchSkillEvaluation(SQLModel, table=True):
     template_id: str = Field(foreign_key="workbench_template_pattern.id", index=True)
     version: int
     suite: str = Field(max_length=80)
-    model_config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    model_configuration: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column("model_config", JSON),
+    )
     result: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     passed: bool = Field(default=False, index=True)
     report_path: str | None = Field(default=None, max_length=500)

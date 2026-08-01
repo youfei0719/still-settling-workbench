@@ -20,9 +20,13 @@ from app.api.routes.script_workbench import router  # noqa: E402
 
 
 app = FastAPI(title="依旧沉淀验证服务")
+frontend_port = os.getenv("WORKBENCH_FRONTEND_PORT", "5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        f"http://localhost:{frontend_port}",
+        f"http://127.0.0.1:{frontend_port}",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,4 +35,8 @@ app.include_router(router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(
+        app,
+        host=os.getenv("WORKBENCH_API_HOST", "127.0.0.1"),
+        port=int(os.getenv("WORKBENCH_API_PORT", "8000")),
+    )
