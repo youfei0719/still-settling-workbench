@@ -356,42 +356,36 @@ def read_external_gates(
 
 
 @router.get("/local-settings", response_model=LocalSettingsStatus)
-def read_local_settings(request: Request) -> Any:
-    require_loopback(request)
+def read_local_settings() -> Any:
     return local_settings_status()
 
 
 @router.put("/local-settings", response_model=LocalSettingsStatus)
 def save_local_settings_endpoint(
-    payload: LocalSettingsUpdateRequest, request: Request
+    payload: LocalSettingsUpdateRequest,
 ) -> Any:
-    require_loopback(request)
     return update_local_settings(payload)
 
 
 @router.post("/local-settings/verify", response_model=LocalSettingsVerification)
-def verify_local_settings_endpoint(request: Request) -> Any:
-    require_loopback(request)
+def verify_local_settings_endpoint() -> Any:
     return verify_local_settings()
 
 
 @router.post("/local-settings/models", response_model=ModelCatalogResponse)
-def discover_local_models(request: Request) -> Any:
-    require_loopback(request)
+def discover_local_models() -> Any:
     return discover_configured_models()
 
 
 @router.post("/local-settings/test-model", response_model=ModelConnectionCheckResponse)
-def test_local_model(request: Request) -> Any:
-    require_loopback(request)
+def test_local_model() -> Any:
     return test_configured_model_connection()
 
 
 @router.post("/local-settings/connect-github", response_model=SkillRepositorySetupResponse)
 def connect_github_repository(
-    payload: GitHubRepositoryConnectRequest, request: Request
+    payload: GitHubRepositoryConnectRequest,
 ) -> Any:
-    require_loopback(request)
     try:
         return connect_github_skill_repository(payload)
     except (RuntimeError, ValueError) as exc:
@@ -400,9 +394,8 @@ def connect_github_repository(
 
 @router.post("/local-settings/create-github", response_model=SkillRepositorySetupResponse)
 def create_github_repository(
-    payload: GitHubRepositoryCreateRequest, request: Request
+    payload: GitHubRepositoryCreateRequest,
 ) -> Any:
-    require_loopback(request)
     try:
         return create_github_skill_repository(payload)
     except (RuntimeError, ValueError) as exc:
@@ -411,9 +404,8 @@ def create_github_repository(
 
 @router.post("/local-settings/create-local", response_model=SkillRepositorySetupResponse)
 def create_local_repository(
-    payload: LocalRepositoryCreateRequest, request: Request
+    payload: LocalRepositoryCreateRequest,
 ) -> Any:
-    require_loopback(request)
     try:
         return create_local_skill_repository(payload)
     except (RuntimeError, ValueError) as exc:
