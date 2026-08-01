@@ -7,8 +7,11 @@ Wants=network-online.target
 Type=simple
 User=settling-workbench
 Group=settling-workbench
+StateDirectory=settling-workbench
 WorkingDirectory=/opt/settling-workbench/backend
 EnvironmentFile=/opt/settling-workbench/.env
+Environment=WORKBENCH_CONFIG_DIR=/var/lib/settling-workbench/config
+Environment=WORKBENCH_DATA_DIR=/var/lib/settling-workbench/data
 ExecStartPre=/opt/settling-workbench/.venv/bin/alembic upgrade head
 ExecStartPre=/opt/settling-workbench/.venv/bin/python app/initial_data.py
 ExecStart=/opt/settling-workbench/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100 --workers 1
