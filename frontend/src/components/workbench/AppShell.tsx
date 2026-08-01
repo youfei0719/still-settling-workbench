@@ -36,7 +36,7 @@ export function AppShell({
         <div className="brand-lockup">
           <img
             className="brand-mark"
-            src="/assets/images/still-settling-mark.svg"
+            src={`${import.meta.env.BASE_URL}assets/images/still-settling-mark.svg`}
             alt="依旧沉淀"
           />
           <div>

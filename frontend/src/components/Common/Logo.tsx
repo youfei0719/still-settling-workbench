@@ -17,7 +17,7 @@ export function Logo({
     variant === "responsive" ? (
       <>
         <img
-          src="/assets/images/still-settling-mark.svg"
+          src={`${import.meta.env.BASE_URL}assets/images/still-settling-mark.svg`}
           alt="依旧沉淀"
           className={cn(
             "size-6 group-data-[collapsible=icon]:hidden",
@@ -25,7 +25,7 @@ export function Logo({
           )}
         />
         <img
-          src="/assets/images/still-settling-mark.svg"
+          src={`${import.meta.env.BASE_URL}assets/images/still-settling-mark.svg`}
           alt="依旧沉淀"
           className={cn(
             "size-5 hidden group-data-[collapsible=icon]:block",
@@ -35,7 +35,7 @@ export function Logo({
       </>
     ) : (
       <img
-        src="/assets/images/still-settling-mark.svg"
+        src={`${import.meta.env.BASE_URL}assets/images/still-settling-mark.svg`}
         alt="依旧沉淀"
         className={cn(variant === "full" ? "size-6" : "size-5", className)}
       />

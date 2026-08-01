@@ -12,7 +12,10 @@ import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
 const isLoggedIn = () => {
-  return localStorage.getItem("access_token") !== null
+  return (
+    localStorage.getItem("still_settling_access_token") !== null ||
+    localStorage.getItem("mcn_radar_token") !== null
+  )
 }
 
 const useAuth = () => {
@@ -42,7 +45,7 @@ const useAuth = () => {
     const response = await LoginService.loginAccessToken({
       formData: data,
     })
-    localStorage.setItem("access_token", response.access_token)
+    localStorage.setItem("still_settling_access_token", response.access_token)
   }
 
   const loginMutation = useMutation({
@@ -54,7 +57,7 @@ const useAuth = () => {
   })
 
   const logout = () => {
-    localStorage.removeItem("access_token")
+    localStorage.removeItem("still_settling_access_token")
     navigate({ to: "/login" })
   }
 

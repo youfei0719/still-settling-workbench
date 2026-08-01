@@ -1,0 +1,21 @@
+[Unit]
+Description=Still Settling Workbench API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=settling-workbench
+Group=settling-workbench
+WorkingDirectory=/opt/settling-workbench/backend
+EnvironmentFile=/opt/settling-workbench/.env
+ExecStartPre=/opt/settling-workbench/.venv/bin/alembic upgrade head
+ExecStartPre=/opt/settling-workbench/.venv/bin/python app/initial_data.py
+ExecStart=/opt/settling-workbench/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100 --workers 1
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
