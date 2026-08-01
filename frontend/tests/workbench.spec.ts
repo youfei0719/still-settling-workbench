@@ -1120,3 +1120,64 @@ test("系统诊断从高级入口进入", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "首次配置" })).toBeVisible()
   await expect(page.getByRole("button", { name: "刷新门禁" })).toBeVisible()
 })
+
+test("部署环境管理模型配置时不保存空值且仍可拉取模型", async ({ page }) => {
+  await page.route("**/api/v1/script-workbench/local-settings", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        llm_mode: "offline",
+        llm_model: "",
+        llm_api_base: "",
+        skill_repository_path: "",
+        skill_remote: "origin",
+        skill_remote_url: "",
+        skill_branch: "main",
+        skill_sync_mode: "github",
+        sources: {
+          llm_mode: "environment",
+          llm_model: "environment",
+          llm_api_base: "environment",
+          skill_repository_path: "default",
+          skill_remote: "default",
+          skill_remote_url: "default",
+          skill_branch: "default",
+          skill_sync_mode: "default",
+        },
+        llm_api_key_configured: true,
+        llm_api_key_source: "environment",
+        douyin_cookie_configured: false,
+        douyin_cookie_source: "none",
+        secret_storage: "session_only",
+        secrets_persisted: false,
+        publish_configured: false,
+        message: "本机设置状态已读取。",
+      }),
+    })
+  })
+  await page.route("**/api/v1/script-workbench/local-settings/models", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        models: [{ id: "gpt-5.4", recommended: true, recommendation_reason: "推荐" }],
+        recommended_model: "gpt-5.4",
+        message: "已拉取模型列表并给出建议。",
+      }),
+    })
+  })
+
+  await page.goto("/")
+  await page.getByRole("button", { name: "系统诊断" }).click()
+
+  await expect(page.getByRole("combobox", { name: "模式", exact: true })).toBeDisabled()
+  await expect(page.getByRole("textbox", { name: "模型", exact: true })).toHaveValue("由启动环境管理")
+  await expect(page.getByRole("textbox", { name: "API Base", exact: true })).toHaveValue("由启动环境管理")
+  await expect(page.getByRole("textbox", { name: "API Key", exact: true })).toHaveValue("由启动环境管理")
+
+  const discoverModels = page.getByRole("button", { name: "拉取服务商模型" })
+  await expect(discoverModels).toBeEnabled()
+  await discoverModels.click()
+  await expect(page.getByText("模型由启动环境固定。已拉取模型列表并给出建议。")).toBeVisible()
+})
