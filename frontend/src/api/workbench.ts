@@ -59,8 +59,8 @@ export class WorkbenchApiError extends Error {
 
 function authorizationHeader(): Record<string, string> {
   const token =
-    window.localStorage.getItem(ACCESS_TOKEN_KEY) ??
-    window.localStorage.getItem(CPM_ACCESS_TOKEN_KEY)
+    window.localStorage.getItem(CPM_ACCESS_TOKEN_KEY) ??
+    window.localStorage.getItem(ACCESS_TOKEN_KEY)
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
