@@ -67,6 +67,13 @@ export function InitialSetupPanel({
   const [repositoryName, setRepositoryName] = useState("still-settling-skills")
   const [repositoryVisibility, setRepositoryVisibility] = useState<"private" | "public">("private")
   const [repositoryParent, setRepositoryParent] = useState("")
+  const llmModeManaged = settings?.sources.llm_mode === "environment"
+  const llmModelManaged = settings?.sources.llm_model === "environment"
+  const llmApiBaseManaged = settings?.sources.llm_api_base === "environment"
+  const llmApiKeyManaged = settings?.llm_api_key_source === "environment"
+  const llmConnectionManaged = Boolean(
+    llmModeManaged || llmModelManaged || llmApiBaseManaged || llmApiKeyManaged,
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -96,14 +103,19 @@ export function InitialSetupPanel({
     setSaving(true)
     setError(null)
     try {
-      const payload: LocalSettingsUpdatePayload = {
-        llm_mode: draft.llm_mode,
-        llm_model: draft.llm_model,
-        llm_api_base: draft.llm_api_base,
+      const payload: LocalSettingsUpdatePayload = {}
+      if (!llmModeManaged) payload.llm_mode = draft.llm_mode
+      if (!llmModelManaged) payload.llm_model = draft.llm_model
+      if (!llmApiBaseManaged) payload.llm_api_base = draft.llm_api_base
+      if (!llmApiKeyManaged && draft.llm_api_key.trim()) {
+        payload.llm_api_key = draft.llm_api_key
       }
-      if (draft.llm_api_key.trim()) payload.llm_api_key = draft.llm_api_key
       if (draft.douyin_cookie_string.trim()) {
         payload.douyin_cookie_string = draft.douyin_cookie_string
+      }
+      if (Object.keys(payload).length === 0) {
+        setVerification(await verifyLocalSettings())
+        return true
       }
       const response = await updateLocalSettings(payload)
       setSettings(response)
@@ -120,8 +132,10 @@ export function InitialSetupPanel({
   }
 
   const saveAndDiscoverModels = async () => {
-    const saved = await save()
-    if (!saved) return
+    if (!llmConnectionManaged) {
+      const saved = await save()
+      if (!saved) return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -245,7 +259,8 @@ export function InitialSetupPanel({
         <div className="setup-grid setup-grid-model">
           <label>
             <span>模式</span>
-            <select value={draft?.llm_mode || "offline"} disabled={loading} onChange={(event) => updateDraft({ llm_mode: event.target.value as Draft["llm_mode"] })}>
+            <select value={llmModeManaged ? "managed" : draft?.llm_mode || "offline"} disabled={loading || llmModeManaged} onChange={(event) => updateDraft({ llm_mode: event.target.value as Draft["llm_mode"] })}>
+              {llmModeManaged ? <option value="managed">由启动环境管理</option> : null}
               <option value="offline">offline</option>
               <option value="optional">optional</option>
               <option value="required">required</option>
@@ -253,20 +268,20 @@ export function InitialSetupPanel({
           </label>
           <label>
             <span>模型</span>
-            <input value={draft?.llm_model || ""} disabled={loading} onChange={(event) => updateDraft({ llm_model: event.target.value })} />
+            <input value={llmModelManaged ? "由启动环境管理" : draft?.llm_model || ""} disabled={loading || llmModelManaged} onChange={(event) => updateDraft({ llm_model: event.target.value })} />
           </label>
           <label>
             <span>API Base</span>
-            <input value={draft?.llm_api_base || ""} placeholder="可留空" disabled={loading} onChange={(event) => updateDraft({ llm_api_base: event.target.value })} />
+            <input value={llmApiBaseManaged ? "由启动环境管理" : draft?.llm_api_base || ""} placeholder="可留空" disabled={loading || llmApiBaseManaged} onChange={(event) => updateDraft({ llm_api_base: event.target.value })} />
           </label>
           <label>
             <span>API Key</span>
-            <input value={draft?.llm_api_key || ""} type="password" placeholder="仅本机安全存储" disabled={loading} onChange={(event) => updateDraft({ llm_api_key: event.target.value })} />
+            <input value={llmApiKeyManaged ? "由启动环境管理" : draft?.llm_api_key || ""} type={llmApiKeyManaged ? "text" : "password"} placeholder="仅本机安全存储" disabled={loading || llmApiKeyManaged} onChange={(event) => updateDraft({ llm_api_key: event.target.value })} />
           </label>
         </div>
         <div className="export-actions">
           <button type="button" className="primary-button" onClick={() => void saveAndDiscoverModels()} disabled={loading || saving}>
-            <Download size={16} /> {saving ? "连接中..." : "保存并拉取模型"}
+            <Download size={16} /> {saving ? "连接中..." : llmConnectionManaged ? "拉取服务商模型" : "保存并拉取模型"}
           </button>
           <button type="button" className="secondary-button" onClick={() => void testModel()} disabled={loading || saving || modelTesting}>
             <ShieldCheck size={16} /> {modelTesting ? "测试中..." : "测试连接"}
@@ -276,7 +291,8 @@ export function InitialSetupPanel({
           <div className="setup-grid setup-grid-model">
             <label>
               <span>服务商模型</span>
-              <select value={draft?.llm_model || ""} disabled={loading || saving} onChange={(event) => updateDraft({ llm_model: event.target.value })}>
+              <select value={llmModelManaged ? "managed" : draft?.llm_model || ""} disabled={loading || saving || llmModelManaged} onChange={(event) => updateDraft({ llm_model: event.target.value })}>
+                {llmModelManaged ? <option value="managed">由启动环境管理</option> : null}
                 <option value="">手动填写模型名</option>
                 {modelCatalog.models.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -287,7 +303,9 @@ export function InitialSetupPanel({
             </label>
             <div className="setup-action-items">
               {modelCatalog.recommended_model
-                ? `已预选推荐模型。${modelCatalog.message} 确认或更换后，点击“保存模型设置”生效。`
+                ? llmModelManaged
+                  ? `模型由启动环境固定。${modelCatalog.message}`
+                  : `已预选推荐模型。${modelCatalog.message} 确认或更换后，点击“保存模型设置”生效。`
                 : modelCatalog.message}
             </div>
           </div>
@@ -359,7 +377,7 @@ export function InitialSetupPanel({
           <RefreshCw size={16} /> 读取设置
         </button>
         <button type="button" className="primary-button" onClick={() => void save()} disabled={loading || saving}>
-          <Save size={16} /> {saving ? "保存中..." : "保存模型设置"}
+          <Save size={16} /> {saving ? "保存中..." : llmConnectionManaged ? "保存本地会话设置" : "保存模型设置"}
         </button>
         <button type="button" className="secondary-button" onClick={() => void verify()} disabled={saving}>
           <ShieldCheck size={16} /> 验证发布
