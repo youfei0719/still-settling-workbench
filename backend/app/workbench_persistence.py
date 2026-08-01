@@ -355,7 +355,7 @@ def replace_skill_governance_records(session: Session, template: TemplatePattern
                 template_id=template.id,
                 version=template.version,
                 suite="release",
-                model_config={},
+                model_configuration={},
                 result=summary.model_dump(mode="json"),
                 passed=summary.passed,
                 report_path=summary.report_path,

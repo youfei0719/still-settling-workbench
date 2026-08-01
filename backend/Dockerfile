@@ -37,4 +37,6 @@ RUN uv sync --frozen --package app
 
 WORKDIR /app/backend/
 
-CMD ["fastapi", "run", "--workers", "4"]
+# Video upload and extraction state is process-local while the workbench runs.
+# Keep one worker until these tasks are moved to a shared queue/store.
+CMD ["fastapi", "run", "--workers", "1"]

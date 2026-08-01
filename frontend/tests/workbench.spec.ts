@@ -1,7 +1,94 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 
 const sampleTranscript =
   "很多人以为这只是一次普通的品牌宣传，但真正值得看的不是明星站位，而是品牌把长期行动变成公众记忆的方式。先看第一个信号，画面里没有急着喊口号，而是把人物、场景和品牌态度放在一起。第二个信号，是评论区讨论的不是单点曝光，而是这个动作是否长期一致。最后回到传播本身，最好的宣传不是突然刷屏，而是让用户感觉它早就在行动里。"
+
+const skillOverview = {
+  tasks: { processing: 0, queued: 0, completed: 0, failed: 0 },
+  recent_analyses: [],
+  generated_scripts: [],
+  templates: [
+    {
+      id: "skill-controversy-hook",
+      name: "争议钩子·实例升维",
+      account_type: "泛娱乐观点号",
+      hotspot_types: ["争议话题"],
+      solves_problems: ["开头缺少清晰判断"],
+      match_signals: ["公开回应", "观点分歧"],
+      applicable_scenes: ["已有可核实的公开信息"],
+      unsuitable_scenes: ["未经证实的爆料"],
+      skeleton: ["争议钩子", "事实举例", "观点升维", "评论引导"],
+      hook_formula: "先给出争议判断，再补充公开事实。",
+      emotion_rhythm: "疑问 -> 理解 -> 判断",
+      ending_formula: "你更认同哪种处理方式？",
+      risk_boundary: "不扩写隐私，不编造内幕。",
+      quality_score: 88,
+      usage_count: 12,
+      source_count: 1,
+      source_titles: ["公开回应样本"],
+      sources: [],
+      status: "candidate",
+      version: 1,
+      owner: "内容主审",
+      platforms: ["douyin"],
+      required_inputs: [],
+      output_contract: [],
+      evaluation_summary: { passed: false },
+      evidence: [
+        {
+          id: "evidence-controversy",
+          claim: "开头应先呈现可核实的争议点。",
+          source_title: "公开回应样本",
+          source_url: "https://example.com/controversy",
+          evidence_tier: "A",
+          scope: "structure",
+        },
+      ],
+      reviews: [],
+      created_at: "2026-07-31T12:00:00.000Z",
+    },
+    {
+      id: "skill-context-analysis",
+      name: "背景拆解型",
+      account_type: "商业分析号",
+      hotspot_types: ["品牌危机"],
+      solves_problems: ["背景信息推进不清"],
+      match_signals: ["行业规律", "风险判断"],
+      applicable_scenes: ["公开商业事件"],
+      unsuitable_scenes: ["投资建议"],
+      skeleton: ["事件一句话", "背景解释", "风险提示"],
+      hook_formula: "先解释真正影响判断的背景。",
+      emotion_rhythm: "理性 -> 信息增量 -> 判断",
+      ending_formula: "你更关注处理速度还是处理态度？",
+      risk_boundary: "不提供投资或法律结论。",
+      quality_score: 84,
+      usage_count: 8,
+      source_count: 1,
+      source_titles: ["行业案例"],
+      sources: [],
+      status: "candidate",
+      version: 1,
+      owner: "内容主审",
+      platforms: ["douyin"],
+      required_inputs: [],
+      output_contract: [],
+      evaluation_summary: { passed: false },
+      evidence: [],
+      reviews: [],
+      created_at: "2026-07-30T12:00:00.000Z",
+    },
+  ],
+}
+
+async function mockSkillOverview(page: Page) {
+  await page.route("**/api/v1/script-workbench/overview", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(skillOverview),
+    })
+  })
+}
 
 function mockedLinkTaskBody(status: "completed" | "failed") {
   const now = new Date().toISOString()
@@ -469,6 +556,7 @@ test.skip("填写交付支持选中文字后用 Codex 局部改写", async ({ pa
 })
 
 test("Skill 列表整行可预览且不会直接跳去写稿", async ({ page }) => {
+  await mockSkillOverview(page)
   const overviewResponsePromise = page.waitForResponse(
     "**/api/v1/script-workbench/overview",
   )
@@ -504,6 +592,27 @@ test("Skill 列表整行可预览且不会直接跳去写稿", async ({ page }) 
 })
 
 test("候选 Skill 能直接进入补充来源流程", async ({ page }) => {
+  await mockSkillOverview(page)
+  await page.route(
+    "**/api/v1/script-workbench/writing-skills/skill-controversy-hook/promotion-readiness",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          template_id: "skill-controversy-hook",
+          ready: false,
+          blockers: ["还需补充来源"],
+          source_count: 1,
+          required_source_count: 3,
+          evidence_count: 1,
+          has_structure_evidence: true,
+          evaluation_passed: false,
+          main_review_approved: false,
+        }),
+      })
+    },
+  )
   await page.goto("/")
   await page
     .getByRole("navigation", { name: "资产功能导航" })
@@ -1008,6 +1117,6 @@ test("系统诊断从高级入口进入", async ({ page }) => {
   await page.getByRole("button", { name: "系统诊断" }).click()
   await expect(page.getByText("素材任务详情")).toBeVisible()
   await expect(page.getByRole("heading", { name: "系统诊断" })).toBeVisible()
-  await expect(page.getByText("高级凭证配置")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "首次配置" })).toBeVisible()
   await expect(page.getByRole("button", { name: "刷新门禁" })).toBeVisible()
 })

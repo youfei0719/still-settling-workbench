@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
 from app.script_workbench import (
     AnalyzeTextRequest,
@@ -114,13 +114,109 @@ from app.script_workbench import (
 )
 from app.workbench_llm import LLMRuntimeConfig, get_llm_config
 
-router = APIRouter(prefix="/script-workbench", tags=["script-workbench"])
-
 
 def require_loopback(request: Request) -> None:
     host = request.client.host if request.client else ""
     if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
-        raise HTTPException(status_code=403, detail="本机设置只允许从本机访问。")
+        raise HTTPException(status_code=403, detail="工作台仅允许从本机访问。")
+
+
+# Local development has no browser login flow; deployed workbenches must use
+# the template's existing administrator authentication before any route runs.
+router_dependencies = [Depends(require_loopback)]
+if os.getenv("ENVIRONMENT", "local").strip().lower() != "local":
+    from app.api.deps import get_current_active_superuser
+
+    router_dependencies = [Depends(get_current_active_superuser)]
+
+router = APIRouter(
+    prefix="/script-workbench",
+    tags=["script-workbench"],
+    dependencies=router_dependencies,
+)
+
+
+VIDEO_UPLOAD_CONTENT_TYPES = {
+    "application/octet-stream",
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "video/x-matroska",
+}
+VIDEO_UPLOAD_EXTENSIONS = {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
+DEFAULT_MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
+
+
+def max_video_upload_bytes() -> int:
+    configured = os.getenv("WORKBENCH_MAX_VIDEO_UPLOAD_BYTES", "").strip()
+    if not configured:
+        return DEFAULT_MAX_VIDEO_UPLOAD_BYTES
+    try:
+        return max(1, int(configured))
+    except ValueError:
+        return DEFAULT_MAX_VIDEO_UPLOAD_BYTES
+
+
+def video_upload_limit_label(limit: int) -> str:
+    return f"{max(1, (limit + 1024 * 1024 - 1) // (1024 * 1024))} MB"
+
+
+def validate_video_upload(request: Request, file_name: str) -> tuple[str, str, int]:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if content_type not in VIDEO_UPLOAD_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="仅支持 MP4、MOV、M4V、MKV 或 WebM 视频文件。",
+        )
+    safe_name = safe_file_name(file_name)
+    extension = Path(safe_name).suffix.lower()
+    if extension not in VIDEO_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="视频文件扩展名不受支持。",
+        )
+    limit = max_video_upload_bytes()
+    declared_size = request.headers.get("content-length")
+    if declared_size:
+        try:
+            if int(declared_size) > limit:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"视频文件不能超过 {video_upload_limit_label(limit)}。",
+                )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="无效的视频文件大小。") from None
+    return safe_name, extension, limit
+
+
+async def save_video_upload(request: Request, *, file_name: str) -> tuple[Path, str]:
+    safe_name, extension, limit = validate_video_upload(request, file_name)
+    source_id = safe_file_name(Path(safe_name).stem)
+    video_dir = media_root() / "videos"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    temporary_path = video_dir / f".{source_id}-{uuid4().hex}.uploading"
+    total_bytes = 0
+    try:
+        with temporary_path.open("xb") as output:
+            async for chunk in request.stream():
+                total_bytes += len(chunk)
+                if total_bytes > limit:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"视频文件不能超过 {video_upload_limit_label(limit)}。",
+                    )
+                output.write(chunk)
+        if total_bytes == 0:
+            raise HTTPException(status_code=400, detail="视频文件为空。")
+        material_path = video_dir / f"{source_id}-{uuid4().hex[:8]}-{total_bytes}{extension}"
+        temporary_path.replace(material_path)
+        return material_path, safe_name
+    except HTTPException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        temporary_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=507, detail="无法保存视频文件。") from exc
 
 
 @contextmanager
@@ -407,23 +503,12 @@ def upload_text(payload: UploadTextRequest) -> Any:
 
 
 @router.post("/upload-video", response_model=VideoUploadResponse)
-def upload_video(
-    content: bytes = Body(..., media_type="application/octet-stream"),
+async def upload_video(
+    request: Request,
     file_name: str = Query(default="uploaded-video.mp4"),
     run_extractors: bool = Query(default=False),
 ) -> Any:
-    if not content:
-        raise HTTPException(status_code=400, detail="视频文件为空。")
-
-    safe_name = safe_file_name(file_name)
-    source_id = safe_file_name(Path(safe_name).stem)
-    extension = Path(safe_name).suffix or ".mp4"
-    video_dir = media_root() / "videos"
-    video_dir.mkdir(parents=True, exist_ok=True)
-    material_path = (
-        video_dir / f"{source_id}-{uuid4().hex[:8]}-{len(content)}{extension}"
-    )
-    material_path.write_bytes(content)
+    material_path, safe_name = await save_video_upload(request, file_name=file_name)
     return create_video_upload_result(
         safe_name, material_path, run_extractors=run_extractors
     )

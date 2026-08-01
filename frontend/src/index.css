@@ -2,6 +2,52 @@
 @import "@heroui/styles";
 @import "tw-animate-css";
 
+.signin-page {
+  align-items: center;
+  background: #f4f7fb;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.signin-panel {
+  background: #ffffff;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgb(33 48 71 / 12%);
+  display: grid;
+  gap: 16px;
+  max-width: 400px;
+  padding: 28px;
+  width: 100%;
+}
+
+.signin-panel h1 {
+  font-size: 24px;
+  margin: 0;
+}
+
+.signin-panel label {
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.signin-panel input {
+  border: 1px solid #b8c2d1;
+  border-radius: 6px;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.signin-error {
+  color: #b42318;
+  font-size: 14px;
+  margin: 0;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -20,6 +20,7 @@ import {
   updateTemplateReview,
   verifyLocalSettings,
   warmupModels,
+  WorkbenchApiError,
 } from "@/api/workbench"
 import { fallbackOverview } from "@/data/fallback"
 import type {
@@ -46,6 +47,7 @@ import { InitialSetupPanel } from "./components/workbench/InitialSetupPanel"
 import { LinkConsole } from "./components/workbench/LinkConsole"
 import { MaterialTaskPanel } from "./components/workbench/MaterialTaskPanel"
 import { ReviewExport } from "./components/workbench/ReviewExport"
+import { SignInPanel } from "./components/workbench/SignInPanel"
 import { TemplateLibrary } from "./components/workbench/TemplateLibrary"
 
 const ACTIVE_EXTRACTION_TASK_KEY = "douyin-workbench-active-extraction-task-id"
@@ -121,6 +123,7 @@ export default function App() {
   const [externalGates, setExternalGates] =
     useState<ExternalGateReport | null>(null)
   const [externalGateLoading, setExternalGateLoading] = useState(false)
+  const [authenticationRequired, setAuthenticationRequired] = useState(false)
 
   const refreshVideoExtractionTasks = useCallback(async () => {
     try {
@@ -165,7 +168,14 @@ export default function App() {
       .then((data) => {
         setOverview(data)
       })
-      .catch(() => {
+      .catch((reason) => {
+        if (
+          reason instanceof WorkbenchApiError &&
+          (reason.status === 401 || reason.status === 403)
+        ) {
+          setAuthenticationRequired(true)
+          return
+        }
         setOverview(fallbackOverview)
       })
     fetchModelStatus()
@@ -768,6 +778,10 @@ export default function App() {
       </div>
     ),
   } satisfies Record<PageKey, ReactElement>
+
+  if (authenticationRequired) {
+    return <SignInPanel onSignedIn={() => window.location.reload()} />
+  }
 
   return (
     <>

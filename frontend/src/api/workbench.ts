@@ -45,6 +45,21 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 
+export class WorkbenchApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = "WorkbenchApiError"
+  }
+}
+
+function authorizationHeader(): Record<string, string> {
+  const token = window.localStorage.getItem("access_token")
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function readApiErrorMessage(response: Response, fallback: string) {
   const raw = await response.text()
   if (!raw) return fallback
@@ -72,12 +87,14 @@ async function readApiErrorMessage(response: Response, fallback: string) {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers)
+  headers.set("Content-Type", "application/json")
+  for (const [name, value] of Object.entries(authorizationHeader())) {
+    headers.set(name, value)
+  }
   const response = await fetch(`${API_BASE}/api/v1/script-workbench${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
     ...options,
+    headers,
   })
 
   if (!response.ok) {
@@ -90,7 +107,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       response,
       `请求失败：${response.status}`,
     )
-    throw new Error(message)
+    throw new WorkbenchApiError(message, response.status)
   }
 
   if (response.status === 204) {
@@ -102,6 +119,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function fetchOverview() {
   return request<WorkbenchOverview>("/overview")
+}
+
+export async function authenticateWorkbench(email: string, password: string) {
+  const response = await fetch(`${API_BASE}/api/v1/login/access-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username: email, password }),
+  })
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, "登录失败")
+    throw new WorkbenchApiError(message, response.status)
+  }
+  const payload = (await response.json()) as { access_token?: string }
+  if (!payload.access_token) throw new Error("登录响应缺少访问令牌。")
+  window.localStorage.setItem("access_token", payload.access_token)
 }
 
 export function fetchCodexSkillPack() {
@@ -284,6 +316,7 @@ export async function uploadVideo(file: File, runExtractors = false) {
       method: "POST",
       headers: {
         "Content-Type": file.type || "application/octet-stream",
+        ...authorizationHeader(),
       },
       body: file,
     },
@@ -294,7 +327,7 @@ export async function uploadVideo(file: File, runExtractors = false) {
       response,
       `视频上传失败：${response.status}`,
     )
-    throw new Error(message)
+    throw new WorkbenchApiError(message, response.status)
   }
 
   return response.json() as Promise<VideoUploadResponse>
