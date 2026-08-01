@@ -1,6 +1,7 @@
 from collections.abc import Generator
-from typing import Annotated
+from typing import Annotated, Any
 
+import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -47,6 +48,38 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_current_cpm_user(token: TokenDep) -> dict[str, Any]:
+    """Validate the CPM session instead of maintaining a second workbench login."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="请从 CPM 健康中台进入沉淀写作 skill。",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        response = httpx.get(
+            settings.CPM_AUTH_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=settings.CPM_AUTH_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CPM 登录校验暂时不可用。",
+        ) from exc
+
+    if response.status_code != status.HTTP_200_OK:
+        raise credentials_exception
+
+    try:
+        current_user = response.json()
+    except ValueError as exc:
+        raise credentials_exception from exc
+
+    if not isinstance(current_user, dict) or not current_user.get("username"):
+        raise credentials_exception
+    return current_user
 
 
 def get_current_active_superuser(current_user: CurrentUser) -> User:

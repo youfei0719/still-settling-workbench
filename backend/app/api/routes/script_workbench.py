@@ -121,13 +121,13 @@ def require_loopback(request: Request) -> None:
         raise HTTPException(status_code=403, detail="工作台仅允许从本机访问。")
 
 
-# Local development has no browser login flow; deployed workbenches must use
-# the template's existing administrator authentication before any route runs.
+# Local development only accepts loopback requests. In production the workbench
+# is a CPM feature, so every request is validated against the CPM login API.
 router_dependencies = [Depends(require_loopback)]
 if os.getenv("ENVIRONMENT", "local").strip().lower() != "local":
-    from app.api.deps import get_current_active_superuser
+    from app.api.deps import get_current_cpm_user
 
-    router_dependencies = [Depends(get_current_active_superuser)]
+    router_dependencies = [Depends(get_current_cpm_user)]
 
 router = APIRouter(
     prefix="/script-workbench",

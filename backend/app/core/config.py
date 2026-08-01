@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     FRONTEND_HOST: str = "http://localhost:5173"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
+    CPM_AUTH_ME_URL: str = "http://127.0.0.1:9000/api/v1/auth/me"
+    CPM_AUTH_TIMEOUT_SECONDS: float = 3.0
 
     BACKEND_CORS_ORIGINS: Annotated[
         list[AnyUrl] | str, BeforeValidator(parse_cors)

@@ -45,6 +45,7 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 const ACCESS_TOKEN_KEY = "still_settling_access_token"
+const CPM_ACCESS_TOKEN_KEY = "mcn_radar_token"
 
 export class WorkbenchApiError extends Error {
   constructor(
@@ -57,7 +58,9 @@ export class WorkbenchApiError extends Error {
 }
 
 function authorizationHeader(): Record<string, string> {
-  const token = window.localStorage.getItem(ACCESS_TOKEN_KEY)
+  const token =
+    window.localStorage.getItem(ACCESS_TOKEN_KEY) ??
+    window.localStorage.getItem(CPM_ACCESS_TOKEN_KEY)
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 

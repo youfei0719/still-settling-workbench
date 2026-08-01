@@ -47,7 +47,6 @@ import { InitialSetupPanel } from "./components/workbench/InitialSetupPanel"
 import { LinkConsole } from "./components/workbench/LinkConsole"
 import { MaterialTaskPanel } from "./components/workbench/MaterialTaskPanel"
 import { ReviewExport } from "./components/workbench/ReviewExport"
-import { SignInPanel } from "./components/workbench/SignInPanel"
 import { TemplateLibrary } from "./components/workbench/TemplateLibrary"
 
 const ACTIVE_EXTRACTION_TASK_KEY = "douyin-workbench-active-extraction-task-id"
@@ -780,7 +779,14 @@ export default function App() {
   } satisfies Record<PageKey, ReactElement>
 
   if (authenticationRequired) {
-    return <SignInPanel onSignedIn={() => window.location.reload()} />
+    return (
+      <main className="signin-page">
+        <section className="signin-panel">
+          <p className="section-eyebrow">访问受限</p>
+          <h1>请从 CPM 健康中台进入</h1>
+        </section>
+      </main>
+    )
   }
 
   return (
