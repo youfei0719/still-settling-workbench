@@ -44,6 +44,7 @@ import type {
 } from "@/types/workbench"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+const ACCESS_TOKEN_KEY = "still_settling_access_token"
 
 export class WorkbenchApiError extends Error {
   constructor(
@@ -56,7 +57,7 @@ export class WorkbenchApiError extends Error {
 }
 
 function authorizationHeader(): Record<string, string> {
-  const token = window.localStorage.getItem("access_token")
+  const token = window.localStorage.getItem(ACCESS_TOKEN_KEY)
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -133,7 +134,7 @@ export async function authenticateWorkbench(email: string, password: string) {
   }
   const payload = (await response.json()) as { access_token?: string }
   if (!payload.access_token) throw new Error("登录响应缺少访问令牌。")
-  window.localStorage.setItem("access_token", payload.access_token)
+  window.localStorage.setItem(ACCESS_TOKEN_KEY, payload.access_token)
 }
 
 export function fetchCodexSkillPack() {
