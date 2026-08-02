@@ -319,9 +319,19 @@ export function uploadText(payload: UploadTextPayload) {
   })
 }
 
-export async function uploadVideo(file: File, runExtractors = false) {
+export async function uploadVideo(
+  file: File,
+  runExtractors = false,
+  source?: { url?: string; contextText?: string },
+) {
+  const query = new URLSearchParams({
+    file_name: file.name,
+    run_extractors: runExtractors ? "true" : "false",
+  })
+  if (source?.url) query.set("source_url", source.url)
+  if (source?.contextText) query.set("context_text", source.contextText)
   const response = await fetch(
-    `${API_BASE}/api/v1/script-workbench/upload-video?file_name=${encodeURIComponent(file.name)}&run_extractors=${runExtractors ? "true" : "false"}`,
+    `${API_BASE}/api/v1/script-workbench/upload-video?${query.toString()}`,
     {
       method: "POST",
       headers: {

@@ -495,10 +495,16 @@ async def upload_video(
     request: Request,
     file_name: str = Query(default="uploaded-video.mp4"),
     run_extractors: bool = Query(default=False),
+    source_url: Optional[str] = Query(default=None),
+    context_text: str = Query(default=""),
 ) -> Any:
     material_path, safe_name = await save_video_upload(request, file_name=file_name)
     return create_video_upload_result(
-        safe_name, material_path, run_extractors=run_extractors
+        safe_name,
+        material_path,
+        run_extractors=run_extractors,
+        context_text=context_text,
+        source_url=source_url,
     )
 
 

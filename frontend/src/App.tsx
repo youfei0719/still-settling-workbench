@@ -16,6 +16,7 @@ import {
   retryVideoExtractionTask,
   startVideoExtractionTask,
   submitLinkTask,
+  uploadVideo,
   updateSkillGovernance,
   updateTemplateReview,
   verifyLocalSettings,
@@ -23,6 +24,11 @@ import {
   WorkbenchApiError,
 } from "@/api/workbench"
 import { fallbackOverview } from "@/data/fallback"
+import {
+  extractWithLocalConnector,
+  LocalConnectorExtractionError,
+  LocalConnectorUnavailableError,
+} from "@/lib/localConnector"
 import type {
   AnalyzeTextResponse,
   CodexSkillPackResponse,
@@ -73,6 +79,38 @@ function linkExtractionErrorMessage(response: LinkTaskResponse) {
     )
   }
   return "这条抖音链接暂时没有提取到视频稿件。请确认粘贴的是完整抖音分享文案或 v.douyin.com 短链，然后重试；系统不会用标题或描述猜内容。"
+}
+
+function localConnectorLinkTask(upload: VideoUploadResponse): LinkTaskResponse {
+  const hasTranscript = Boolean(upload.transcript?.content_text.trim())
+  const completed = hasTranscript && upload.correction_status === "completed"
+  const qualityNeedsReview = hasTranscript && !completed
+  return {
+    source_video: upload.source_video,
+    parser_status: completed ? "completed" : "failed",
+    parser_provider: "本机连接器（BaoCut 兼容）",
+    output_dir: null,
+    downloaded_files: [upload.source_video.title],
+    video_upload: upload,
+    parser_error_code: completed
+      ? null
+      : qualityNeedsReview
+        ? "transcript_quality"
+        : "no_media",
+    parser_error_title: completed
+      ? null
+      : qualityNeedsReview
+        ? "稿件校正未通过"
+        : "未识别出视频稿件",
+    parser_error_detail: completed
+      ? null
+      : qualityNeedsReview
+        ? upload.transcript_quality_message
+        : "本机已下载视频，但没有得到足够的可分析稿件。",
+    parser_action_items: completed ? [] : upload.fallback_inputs,
+    message: `本机连接器已下载视频。${upload.message}`,
+    fallback_inputs: upload.fallback_inputs,
+  }
 }
 
 export default function App() {
@@ -220,7 +258,21 @@ export default function App() {
     setVideoUpload(null)
     setLoading(true)
     try {
-      const response = await submitLinkTask(url)
+      let connectorUnavailable = false
+      let response: LinkTaskResponse
+      try {
+        const localVideo = await extractWithLocalConnector(url)
+        const upload = await uploadVideo(localVideo, true, {
+          url,
+          contextText: url,
+        })
+        response = localConnectorLinkTask(upload)
+      } catch (event) {
+        if (event instanceof LocalConnectorExtractionError) throw event
+        if (!(event instanceof LocalConnectorUnavailableError)) throw event
+        connectorUnavailable = true
+        response = await submitLinkTask(url)
+      }
       setLinkTask(response)
       setVideoUpload(response.video_upload || null)
       const extractedTitle =
@@ -245,7 +297,12 @@ export default function App() {
           setTitle(extractedTitle)
         }
         setUploadNotice(null)
-        setError(linkExtractionErrorMessage(response))
+        const extractionError = linkExtractionErrorMessage(response)
+        setError(
+          connectorUnavailable
+            ? `本机连接器未启动。${extractionError}`
+            : extractionError,
+        )
         setToast(
           response.parser_error_code === "transcript_quality"
             ? "稿件校正未通过，已停止拆解"
