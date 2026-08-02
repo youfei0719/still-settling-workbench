@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 APP_NAME = "douyin-script-workbench"
 KEYRING_SERVICE = "douyin-script-workbench"
@@ -181,11 +182,23 @@ def _secret_configured(setting: str) -> tuple[bool, str]:
     return False, "none"
 
 
+def _api_base_label(value: str) -> str:
+    if not value.strip():
+        return ""
+    parsed = urlparse(value)
+    return parsed.netloc or "已配置"
+
+
 def local_settings_status(
     message: str = "本机设置状态已读取。", *, reveal_environment: bool = False
 ) -> dict[str, Any]:
     values = {setting: _effective_value(setting)[0] for setting in PUBLIC_ENV_BY_SETTING}
     sources = {setting: _effective_value(setting)[1] for setting in PUBLIC_ENV_BY_SETTING}
+    runtime_mode = os.getenv("WORKBENCH_LLM_MODE", "offline").strip().lower()
+    if runtime_mode not in {"offline", "optional", "required"}:
+        runtime_mode = "offline"
+    runtime_model = os.getenv("WORKBENCH_LLM_MODEL", "").strip()
+    runtime_base_label = _api_base_label(os.getenv("WORKBENCH_LLM_API_BASE", ""))
     publish_values = dict(values)
     for setting, default in DEFAULTS.items():
         if not values[setting]:
@@ -210,6 +223,13 @@ def local_settings_status(
     return {
         **values,
         "sources": sources,
+        "llm_connection_managed": any(
+            sources.get(setting) == "environment"
+            for setting in ("llm_mode", "llm_model", "llm_api_base")
+        ) or llm_key_source == "environment",
+        "llm_runtime_mode": runtime_mode,
+        "llm_runtime_model": runtime_model,
+        "llm_api_base_label": runtime_base_label,
         "llm_api_key_configured": llm_key_configured,
         "llm_api_key_source": llm_key_source,
         "douyin_cookie_configured": cookie_configured,

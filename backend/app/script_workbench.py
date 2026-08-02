@@ -401,6 +401,10 @@ class LocalSettingsStatus(BaseModel):
     sources: dict[str, Literal["environment", "local", "default"]] = Field(
         default_factory=dict
     )
+    llm_connection_managed: bool = False
+    llm_runtime_mode: Literal["offline", "optional", "required"] = "offline"
+    llm_runtime_model: str = ""
+    llm_api_base_label: str = ""
     llm_api_key_configured: bool = False
     llm_api_key_source: Literal["environment", "keyring", "session", "none"] = "none"
     douyin_cookie_configured: bool = False

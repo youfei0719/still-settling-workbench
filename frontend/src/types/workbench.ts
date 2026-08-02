@@ -353,6 +353,10 @@ export interface LocalSettingsStatus {
   skill_branch: string
   skill_sync_mode: "github" | "local"
   sources: Record<string, "environment" | "local" | "default">
+  llm_connection_managed: boolean
+  llm_runtime_mode: "offline" | "optional" | "required"
+  llm_runtime_model: string
+  llm_api_base_label: string
   llm_api_key_configured: boolean
   llm_api_key_source: "environment" | "keyring" | "session" | "none"
   douyin_cookie_configured: boolean

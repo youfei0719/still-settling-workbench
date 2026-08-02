@@ -1122,38 +1122,43 @@ test("系统诊断从高级入口进入", async ({ page }) => {
 })
 
 test("部署环境管理模型配置时不保存空值且仍可拉取模型", async ({ page }) => {
+  const managedSettings = {
+    llm_mode: "offline",
+    llm_model: "",
+    llm_api_base: "",
+    skill_repository_path: "",
+    skill_remote: "origin",
+    skill_remote_url: "",
+    skill_branch: "main",
+    skill_sync_mode: "github",
+    sources: {
+      llm_mode: "environment",
+      llm_model: "environment",
+      llm_api_base: "environment",
+      skill_repository_path: "default",
+      skill_remote: "default",
+      skill_remote_url: "default",
+      skill_branch: "default",
+      skill_sync_mode: "default",
+    },
+    llm_connection_managed: true,
+    llm_runtime_mode: "required",
+    llm_runtime_model: "gpt-5.4",
+    llm_api_base_label: "tokenflux.dev",
+    llm_api_key_configured: true,
+    llm_api_key_source: "environment",
+    douyin_cookie_configured: false,
+    douyin_cookie_source: "none",
+    secret_storage: "session_only",
+    secrets_persisted: false,
+    publish_configured: false,
+    message: "本机设置状态已读取。",
+  }
   await page.route("**/api/v1/script-workbench/local-settings", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        llm_mode: "offline",
-        llm_model: "",
-        llm_api_base: "",
-        skill_repository_path: "",
-        skill_remote: "origin",
-        skill_remote_url: "",
-        skill_branch: "main",
-        skill_sync_mode: "github",
-        sources: {
-          llm_mode: "environment",
-          llm_model: "environment",
-          llm_api_base: "environment",
-          skill_repository_path: "default",
-          skill_remote: "default",
-          skill_remote_url: "default",
-          skill_branch: "default",
-          skill_sync_mode: "default",
-        },
-        llm_api_key_configured: true,
-        llm_api_key_source: "environment",
-        douyin_cookie_configured: false,
-        douyin_cookie_source: "none",
-        secret_storage: "session_only",
-        secrets_persisted: false,
-        publish_configured: false,
-        message: "本机设置状态已读取。",
-      }),
+      body: JSON.stringify(managedSettings),
     })
   })
   await page.route("**/api/v1/script-workbench/local-settings/models", async (route) => {
@@ -1167,17 +1172,63 @@ test("部署环境管理模型配置时不保存空值且仍可拉取模型", as
       }),
     })
   })
+  await page.route("**/api/v1/script-workbench/local-settings/test-model", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ passed: true, message: "模型连接与结构化调用测试通过。" }),
+    })
+  })
+  await page.route("**/api/v1/script-workbench/local-settings/verify", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        publish_ready: false,
+        git_available: true,
+        gh_authenticated: false,
+        repository_valid: false,
+        remote_matches: false,
+        branch_exists: false,
+        action_items: [],
+        message: "发布配置尚未完成。",
+      }),
+    })
+  })
+  await page.route("**/api/v1/script-workbench/local-settings/connect-github", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        settings: {
+          ...managedSettings,
+          skill_repository_path: "/tmp/douyin-writing-skills",
+          skill_remote_url: "https://github.com/youfei0719/douyin-writing-skills.git",
+          publish_configured: true,
+        },
+        message: "已连接 GitHub 仓库并自动完成本机发布配置。",
+      }),
+    })
+  })
 
   await page.goto("/")
   await page.getByRole("button", { name: "系统诊断" }).click()
 
-  await expect(page.getByRole("combobox", { name: "模式", exact: true })).toBeDisabled()
-  await expect(page.getByRole("textbox", { name: "模型", exact: true })).toHaveValue("由启动环境管理")
-  await expect(page.getByRole("textbox", { name: "API Base", exact: true })).toHaveValue("由启动环境管理")
-  await expect(page.getByRole("textbox", { name: "API Key", exact: true })).toHaveValue("由启动环境管理")
+  await expect(page.getByText("当前模型连接已在服务器上启用。", { exact: false })).toBeVisible()
+  await expect(page.getByRole("combobox", { name: "模式", exact: true })).toHaveValue("required")
+  await expect(page.getByRole("textbox", { name: "模型", exact: true })).toHaveValue("gpt-5.4")
+  await expect(page.getByRole("textbox", { name: "API Base", exact: true })).toHaveValue("tokenflux.dev")
+  await expect(page.getByRole("textbox", { name: "API Key", exact: true })).toHaveValue("已安全保存")
 
   const discoverModels = page.getByRole("button", { name: "拉取服务商模型" })
   await expect(discoverModels).toBeEnabled()
   await discoverModels.click()
-  await expect(page.getByText("模型由启动环境固定。已拉取模型列表并给出建议。")).toBeVisible()
+  await expect(page.getByText("当前模型为 gpt-5.4。已拉取模型列表并给出建议。")).toBeVisible()
+
+  await page.getByRole("button", { name: "测试连接" }).click()
+  await expect(page.getByText("模型连接与结构化调用测试通过。")).toBeVisible()
+
+  await page.getByRole("textbox", { name: "GitHub 仓库地址", exact: true }).fill("https://github.com/youfei0719/douyin-writing-skills")
+  await page.getByRole("button", { name: "连接并自动配置" }).click()
+  await expect(page.getByText("已连接 GitHub 仓库并自动完成本机发布配置。")).toBeVisible()
 })

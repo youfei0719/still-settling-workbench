@@ -102,6 +102,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
+    if ([502, 503, 504].includes(response.status)) {
+      throw new WorkbenchApiError(
+        "服务正在重启或暂时不可用。请等待几秒后重试，页面中已填写的内容不会丢失。",
+        response.status,
+      )
+    }
     if (response.status === 404 && path.includes("/approve-and-publish")) {
       throw new Error(
         "本地发布服务尚未更新。请执行 scripts/workbench-local.sh stop 后再执行 start，然后重试。",
