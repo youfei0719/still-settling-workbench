@@ -334,10 +334,6 @@ def read_llm_status() -> Any:
     sources = local_settings_status().sources
     if sources.get("llm_api_base") == "environment":
         config = config.model_copy(update={"api_base": None})
-    if sources.get("llm_model") == "environment":
-        config = config.model_copy(update={"model": "由启动环境管理"})
-    if sources.get("llm_mode") == "environment":
-        config = config.model_copy(update={"mode": "offline"})
     return config
 
 
