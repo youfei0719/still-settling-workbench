@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react"
 import type {
   AnalyzeTextResponse,
   LinkTaskResponse,
+  ServerMediaTask,
   TemplatePattern,
   VideoUploadResponse,
 } from "@/types/workbench"
@@ -127,6 +128,7 @@ export function LinkConsole({
   url,
   loading,
   error,
+  serverMediaTask,
   linkTask,
   videoUpload,
   analysis,
@@ -139,6 +141,7 @@ export function LinkConsole({
   url: string
   loading: boolean
   error: string | null
+  serverMediaTask: ServerMediaTask | null
   linkTask: LinkTaskResponse | null
   videoUpload: VideoUploadResponse | null
   analysis: AnalyzeTextResponse | null
@@ -183,6 +186,8 @@ export function LinkConsole({
   const isAnalyzing = loading && hasTranscript && !analysis
   const loadingMessage = isAnalyzing
     ? "正在拆解稿件的开头、推进、情绪和结尾"
+    : serverMediaTask?.stage || serverMediaTask?.stage_detail
+      ? serverMediaTask.stage || serverMediaTask.stage_detail
     : elapsedSeconds >= 12
       ? "正在识别视频语音与画面文字，长视频需要多一点时间"
       : elapsedSeconds >= 4
@@ -201,7 +206,7 @@ export function LinkConsole({
       <Card className="input-panel">
         <SectionHeader
           title="沉淀写作 Skill"
-          description="粘贴完整的抖音分享文案或短链即可开始。系统会先尝试免登录提取；取得真实视频稿件后，才会拆解写法并生成 Skill 草稿。"
+          description="粘贴完整的抖音分享文案或短链即可开始。主站会免登录临时处理媒体，只保留真实文稿、分析历史和 Skill。"
         />
 
         {evidenceTarget ? (

@@ -10,13 +10,13 @@ import {
   fetchLocalSettings,
   fetchModelStatus,
   fetchOverview,
+  fetchServerMediaTask,
   fetchVideoExtractionTask,
   fetchVideoExtractionTasks,
   publishCodexSkillPackToGithub,
   retryVideoExtractionTask,
+  startServerMediaTask,
   startVideoExtractionTask,
-  submitLinkTask,
-  uploadVideo,
   updateSkillGovernance,
   updateTemplateReview,
   verifyLocalSettings,
@@ -24,11 +24,6 @@ import {
   WorkbenchApiError,
 } from "@/api/workbench"
 import { fallbackOverview } from "@/data/fallback"
-import {
-  extractWithLocalConnector,
-  LocalConnectorExtractionError,
-  LocalConnectorUnavailableError,
-} from "@/lib/localConnector"
 import type {
   AnalyzeTextResponse,
   CodexSkillPackResponse,
@@ -39,6 +34,7 @@ import type {
   ModelRuntimeStatus,
   SkillGovernancePayload,
   SkillApprovalAndPublishResponse,
+  ServerMediaTask,
   TemplatePattern,
   TemplateReviewPayload,
   VideoExtractionTask,
@@ -56,60 +52,71 @@ import { ReviewExport } from "./components/workbench/ReviewExport"
 import { TemplateLibrary } from "./components/workbench/TemplateLibrary"
 
 const ACTIVE_EXTRACTION_TASK_KEY = "douyin-workbench-active-extraction-task-id"
-function linkExtractionErrorMessage(response: LinkTaskResponse) {
-  if (
-    response.parser_error_code === "downloader_missing" ||
-    response.parser_error_code === "downloader_disabled"
-  ) {
-    return "本机链接提取能力没有开启。请到系统诊断启用后重试；系统不会用标题或描述猜内容。"
-  }
-  if (response.parser_error_code === "timeout") {
-    return "视频下载速度过慢。系统已自动保留临时分片并续传重试，但仍未在限定时间内完成；稍后重试即可，系统不会用标题或描述猜内容。"
-  }
-  if (response.parser_error_code === "public_access_unavailable") {
-    return "这条公开链接暂时没有返回视频文件。请确认链接仍公开可访问后重试；系统不会用标题或描述猜内容。"
-  }
-  if (response.parser_error_code === "cookie_required") {
-    return "这条链接需要有效的抖音会话。系统会优先读取本机 Chrome Cookie；请先确认 Chrome 能正常打开该链接后重试。"
-  }
-  if (response.parser_error_code === "transcript_quality") {
-    return (
-      response.video_upload?.transcript_quality_message ||
-      "稿件中仍有无法可靠确认的专名或转写片段，系统已停止后续拆解。"
-    )
-  }
-  return "这条抖音链接暂时没有提取到视频稿件。请确认粘贴的是完整抖音分享文案或 v.douyin.com 短链，然后重试；系统不会用标题或描述猜内容。"
-}
 
-function localConnectorLinkTask(upload: VideoUploadResponse): LinkTaskResponse {
-  const hasTranscript = Boolean(upload.transcript?.content_text.trim())
-  const completed = hasTranscript && upload.correction_status === "completed"
-  const qualityNeedsReview = hasTranscript && !completed
+function linkTaskFromServerMediaTask(task: ServerMediaTask): LinkTaskResponse {
+  const transcriptText = task.result?.transcript.trim() || ""
+  const sourceVideo = {
+    id: task.id,
+    input_type: "douyin_url" as const,
+    title: task.result?.title || "抖音视频",
+    url: task.source_url,
+    author: task.result?.author || null,
+    publish_time: task.result?.publish_time || null,
+    status: transcriptText ? ("completed" as const) : ("failed" as const),
+    material_path: null,
+    created_at: task.created_at,
+  }
+  const upload: VideoUploadResponse | null = transcriptText
+    ? {
+        source_video: sourceVideo,
+        extraction_status: "completed",
+        frame_paths: [],
+        asr_status: "completed",
+        asr_provider: task.result?.provider || "外部转写 API",
+        asr_text: transcriptText,
+        ocr_status: "skipped",
+        ocr_provider: "未启用",
+        ocr_text: "",
+        transcript: {
+          id: `transcript_${task.id}`,
+          source_video_id: sourceVideo.id,
+          asr_text: transcriptText,
+          ocr_text: "",
+          content_text: transcriptText,
+          timestamps: task.result?.timestamps || [],
+          confidence: 0.75,
+          source: "external_asr",
+        },
+        correction_status: "completed",
+        corrections: [],
+        unresolved_fragments: [],
+        transcript_quality_score: 75,
+        transcript_quality_message: "已获得外部转写文稿，可进入结构分析。",
+        context_terms: [],
+        message: "服务器已完成临时媒体处理，视频和音频已清理。",
+        asr_message: "外部转写 API 已返回文稿。",
+        ocr_message: "本次链接任务未执行 OCR。",
+        next_step: "可继续拆解写作结构。",
+        fallback_inputs: ["上传字幕文件", "粘贴转写文本"],
+        media_cleanup_status: "completed",
+        media_cleanup_message: "视频和音频仅存在于任务临时目录，已清理。",
+      }
+    : null
   return {
-    source_video: upload.source_video,
-    parser_status: completed ? "completed" : "failed",
-    parser_provider: "本机连接器（BaoCut 兼容）",
+    source_video: sourceVideo,
+    parser_status: transcriptText ? "completed" : "failed",
+    parser_provider: "主站媒体任务（yt-dlp + 外部转写 API）",
     output_dir: null,
-    downloaded_files: [upload.source_video.title],
+    downloaded_files: [],
     video_upload: upload,
-    parser_error_code: completed
-      ? null
-      : qualityNeedsReview
-        ? "transcript_quality"
-        : "no_media",
-    parser_error_title: completed
-      ? null
-      : qualityNeedsReview
-        ? "稿件校正未通过"
-        : "未识别出视频稿件",
-    parser_error_detail: completed
-      ? null
-      : qualityNeedsReview
-        ? upload.transcript_quality_message
-        : "本机已下载视频，但没有得到足够的可分析稿件。",
-    parser_action_items: completed ? [] : upload.fallback_inputs,
-    message: `本机连接器已下载视频。${upload.message}`,
-    fallback_inputs: upload.fallback_inputs,
+    parser_error_code: transcriptText ? null : "no_media",
+    parser_error_title: transcriptText ? null : "未识别出视频稿件",
+    parser_error_detail: transcriptText ? null : task.error || "服务器没有返回可分析文稿。",
+    parser_action_items: transcriptText ? [] : ["上传字幕文件", "粘贴转写文本"],
+    message: transcriptText
+      ? "主站已完成下载、转写并清理临时媒体。"
+      : task.error || "主站媒体任务未完成。",
+    fallback_inputs: transcriptText ? [] : ["上传字幕文件", "粘贴转写文本"],
   }
 }
 
@@ -133,6 +140,8 @@ export default function App() {
   const [videoUpload, setVideoUpload] = useState<VideoUploadResponse | null>(
     null,
   )
+  const [serverMediaTask, setServerMediaTask] =
+    useState<ServerMediaTask | null>(null)
   const [videoExtractionTask, setVideoExtractionTask] =
     useState<VideoExtractionTask | null>(null)
   const [videoExtractionTasks, setVideoExtractionTasks] = useState<
@@ -256,23 +265,17 @@ export default function App() {
     setSavedSkill(null)
     setLinkTask(null)
     setVideoUpload(null)
+    setServerMediaTask(null)
     setLoading(true)
     try {
-      let connectorUnavailable = false
-      let response: LinkTaskResponse
-      try {
-        const localVideo = await extractWithLocalConnector(url)
-        const upload = await uploadVideo(localVideo, true, {
-          url,
-          contextText: url,
-        })
-        response = localConnectorLinkTask(upload)
-      } catch (event) {
-        if (event instanceof LocalConnectorExtractionError) throw event
-        if (!(event instanceof LocalConnectorUnavailableError)) throw event
-        connectorUnavailable = true
-        response = await submitLinkTask(url)
+      let task = await startServerMediaTask(url)
+      setServerMediaTask(task)
+      while (task.status === "queued" || task.status === "processing") {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500))
+        task = await fetchServerMediaTask(task.id)
+        setServerMediaTask(task)
       }
+      const response = linkTaskFromServerMediaTask(task)
       setLinkTask(response)
       setVideoUpload(response.video_upload || null)
       const extractedTitle =
@@ -288,30 +291,10 @@ export default function App() {
         response.parser_status !== "completed" ||
         extractedText.trim().length < 10
       ) {
-        setText(
-          response.parser_error_code === "transcript_quality"
-            ? extractedText
-            : "",
-        )
-        if (response.parser_error_code === "transcript_quality") {
-          setTitle(extractedTitle)
-        }
+        setText("")
         setUploadNotice(null)
-        const extractionError = linkExtractionErrorMessage(response)
-        setError(
-          connectorUnavailable
-            ? `本机连接器未启动。${extractionError}`
-            : extractionError,
-        )
-        setToast(
-          response.parser_error_code === "transcript_quality"
-            ? "稿件校正未通过，已停止拆解"
-            : response.parser_error_code === "public_access_unavailable"
-              ? "公开链接暂时不可用，已完成自动重试"
-              : response.parser_error_code === "cookie_required"
-                ? "需要有效的抖音会话"
-              : "未识别出真实视频稿件",
-        )
+        setError(response.parser_error_detail || "主站没有取得可分析的视频稿件。")
+        setToast("主站媒体任务未完成")
         return
       }
 
@@ -322,17 +305,10 @@ export default function App() {
         title: extractedTitle,
         content: extractedText,
         input_type: "transcript",
-        url:
-          response.video_upload?.source_video.url ||
-          response.source_video.url ||
-          url,
+        url: response.source_video.url || url,
         source_video_id: response.video_upload?.source_video.id,
-        author:
-          response.video_upload?.source_video.author ||
-          response.source_video.author,
-        publish_time:
-          response.video_upload?.source_video.publish_time ||
-          response.source_video.publish_time,
+        author: response.source_video.author,
+        publish_time: response.source_video.publish_time,
         source_created_at: response.video_upload?.source_video.created_at,
         asr_text: response.video_upload?.asr_text,
         ocr_text: response.video_upload?.ocr_text,
@@ -736,6 +712,7 @@ export default function App() {
         url={url}
         loading={loading}
         error={error}
+        serverMediaTask={serverMediaTask}
         linkTask={linkTask}
         videoUpload={videoUpload}
         analysis={analysis}

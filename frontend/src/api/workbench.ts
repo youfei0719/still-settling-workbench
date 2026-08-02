@@ -28,6 +28,7 @@ import type {
   SelectionRewriteResponse,
   SelectionRewriteSuggestionPayload,
   SelectionRewriteSuggestionResponse,
+  ServerMediaTask,
   SkillApprovalAndPublishResponse,
   SkillGovernancePayload,
   SkillPromotionReadiness,
@@ -266,6 +267,24 @@ export function submitLinkTask(url: string) {
     method: "POST",
     body: JSON.stringify({ url }),
   })
+}
+
+export function startServerMediaTask(url: string) {
+  return request<ServerMediaTask>("/server-media-tasks", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  })
+}
+
+export function fetchServerMediaTask(taskId: string) {
+  return request<ServerMediaTask>(`/server-media-tasks/${encodeURIComponent(taskId)}`)
+}
+
+export function retryServerMediaTask(taskId: string) {
+  return request<ServerMediaTask>(
+    `/server-media-tasks/${encodeURIComponent(taskId)}/retry`,
+    { method: "POST" },
+  )
 }
 
 export function fetchLinkDiagnostics(limit = 20) {

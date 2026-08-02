@@ -113,6 +113,14 @@ from app.script_workbench import (
     write_human_review_template,
 )
 from app.workbench_llm import LLMRuntimeConfig, get_llm_config
+from app.media_tasks import (
+    ServerMediaTask,
+    ServerMediaTaskRequest,
+    create_server_media_task,
+    get_server_media_task,
+    list_server_media_tasks,
+    retry_server_media_task,
+)
 
 
 def require_loopback(request: Request) -> None:
@@ -464,6 +472,32 @@ def submit_link_task(payload: LinkTaskRequest) -> Any:
     response = create_link_task(payload)
     persist_link_task_if_available(response)
     return response
+
+
+@router.post("/server-media-tasks", response_model=ServerMediaTask)
+def create_server_media_task_endpoint(payload: ServerMediaTaskRequest) -> Any:
+    return create_server_media_task(payload)
+
+
+@router.get("/server-media-tasks", response_model=list[ServerMediaTask])
+def read_server_media_tasks(limit: int = Query(default=20, ge=1, le=100)) -> Any:
+    return list_server_media_tasks(limit)
+
+
+@router.get("/server-media-tasks/{task_id}", response_model=ServerMediaTask)
+def read_server_media_task(task_id: str) -> Any:
+    try:
+        return get_server_media_task(task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="未找到媒体任务。") from exc
+
+
+@router.post("/server-media-tasks/{task_id}/retry", response_model=ServerMediaTask)
+def retry_server_media_task_endpoint(task_id: str) -> Any:
+    try:
+        return retry_server_media_task(task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="未找到媒体任务。") from exc
 
 
 @router.get("/link-diagnostics", response_model=list[LinkDiagnosticRecord])

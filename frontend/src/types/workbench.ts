@@ -470,6 +470,31 @@ export interface LinkTaskResponse {
   fallback_inputs: string[]
 }
 
+export interface ServerMediaTaskResult {
+  source_url: string
+  title: string
+  author?: string | null
+  publish_time?: string | null
+  transcript: string
+  timestamps: string[]
+  provider: string
+}
+
+export interface ServerMediaTask {
+  id: string
+  source_url: string
+  status: "queued" | "processing" | "completed" | "failed"
+  stage: string
+  stage_detail: string
+  progress: number
+  result?: ServerMediaTaskResult | null
+  error_code?: string | null
+  error?: string | null
+  retry_of?: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface LinkDiagnosticRecord {
   id: string
   url: string
