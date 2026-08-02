@@ -244,7 +244,7 @@ export function LinkConsole({
             ) : (
               <Link2 size={16} />
             )}
-            {loading ? "本机转写中..." : "本机提取并转写"}
+            {loading ? "主站媒体处理中..." : "开始提取并转写"}
           </button>
         </div>
 
@@ -271,7 +271,7 @@ export function LinkConsole({
         {error ? (
           <div className="alert-box alert-error">
             <strong>
-              {qualityNeedsReview ? "稿件校正未通过" : "本机转写未完成"}
+              {qualityNeedsReview ? "稿件校正未通过" : "主站媒体任务未完成"}
             </strong>
             <span>{error}</span>
           </div>
@@ -351,7 +351,7 @@ export function LinkConsole({
                     ? "没有取得可分析的视频内容"
                     : linkTask
                       ? "已确认视频内容，可以继续提取稿件"
-                      : "本机连接器处理后将在这里显示结果"}
+                      : "主站处理后将在这里显示结果"}
                 </dd>
               </div>
             </dl>
@@ -401,7 +401,7 @@ export function LinkConsole({
               <p className="progress-empty-detail">
                 {isExtracting
                   ? loadingMessage
-                  : "本机转写完成后，可在这里按语义段落阅读全文。"}
+                  : "主站转写完成后，可在这里按语义段落阅读全文。"}
               </p>
             )}
             {videoUpload?.transcript_quality_message ? (
