@@ -4,13 +4,13 @@
 
 ## 启动
 
-安装 BaoCut 已使用的 `yt-dlp` 后，在仓库根目录运行：
+安装 BaoCut 已使用的 `yt-dlp` 后，在仓库根目录运行一次：
 
 ```sh
-./connector/run-local-connector.sh
+./connector/install-local-connector.sh
 ```
 
-连接器只监听 `127.0.0.1:8765`。默认仅允许本地开发地址和生产工作台 `http://170.106.75.116` 调用；需要增加受信任工作台地址时，设置：
+安装器会在当前 Mac 登录后自动启动连接器。连接器只监听 `127.0.0.1:8765`。默认仅允许本地开发地址和生产工作台 `http://170.106.75.116` 调用；需要增加受信任工作台地址时，设置：
 
 ```sh
 STILL_SETTLING_CONNECTOR_ORIGINS=https://workbench.example.com ./connector/run-local-connector.sh
