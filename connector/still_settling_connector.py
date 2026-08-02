@@ -35,6 +35,8 @@ DEFAULT_ORIGINS: Final = {
 SUPPORTED_EXTENSIONS: Final = {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 BROWSER_RETRY_ORDER: Final = (
     "chrome",
+    "chrome",
+    "chrome",
     "safari",
     "firefox",
     "brave",
@@ -42,6 +44,10 @@ BROWSER_RETRY_ORDER: Final = (
     "chromium",
     "opera",
     "vivaldi",
+)
+PREFERRED_MP4_FORMAT: Final = (
+    "bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/"
+    "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
 )
 
 
@@ -101,6 +107,14 @@ def download_attempt(url: str, output_dir: Path, browser: str | None) -> Path | 
         "1",
         "--no-progress",
         "--no-warnings",
+        "--retries",
+        "2",
+        "--fragment-retries",
+        "2",
+        "--retry-sleep",
+        "http:linear=1:2",
+        "--format",
+        PREFERRED_MP4_FORMAT,
         "--merge-output-format",
         "mp4",
         "--output",
@@ -126,14 +140,19 @@ def download_media(url: str) -> tuple[Path, tempfile.TemporaryDirectory[str]]:
     temporary_directory = tempfile.TemporaryDirectory(prefix="still-settling-")
     output_dir = Path(temporary_directory.name)
     try:
-        media = download_attempt(url, output_dir, browser=None)
+        # Douyin can require a fresh anonymous visitor session.  Read it from the
+        # default browser first, as BaoCut does; no cookie is copied or sent away.
+        media = None
+        for browser in BROWSER_RETRY_ORDER:
+            media = download_attempt(url, output_dir, browser=browser)
+            if media is not None:
+                break
         if media is None:
-            for browser in BROWSER_RETRY_ORDER:
-                media = download_attempt(url, output_dir, browser=browser)
-                if media is not None:
-                    break
+            media = download_attempt(url, output_dir, browser=None)
         if media is None:
-            raise ConnectorError("本机浏览器会话没有返回可用的抖音视频。")
+            raise ConnectorError(
+                "抖音暂未接受本机的匿名访问会话，已自动重试；无需登录，请稍后重试。"
+            )
         if media.stat().st_size > MAX_MEDIA_BYTES:
             raise ConnectorError("视频超过 512 MB 上传限制。")
         return media, temporary_directory
@@ -160,6 +179,8 @@ class ConnectorHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            if self.headers.get("Access-Control-Request-Private-Network") == "true":
+                self.send_header("Access-Control-Allow-Private-Network", "true")
             self.send_header(
                 "Access-Control-Expose-Headers", "Content-Disposition, Content-Type"
             )
