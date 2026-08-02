@@ -54,6 +54,15 @@ def test_downloader_prefers_chrome_session_and_baocut_compatible_mp4_format(
     assert commands[0][commands[0].index("--format") + 1] == connector.PREFERRED_MP4_FORMAT
 
 
+def test_parses_enabled_macos_system_proxy() -> None:
+    output = """
+    HTTPEnable : 1
+    HTTPPort : 7897
+    HTTPProxy : 127.0.0.1
+    """
+    assert connector.proxy_from_scutil(output) == "http://127.0.0.1:7897"
+
+
 def test_upload_target_must_be_the_calling_workbench_api() -> None:
     origin = "http://170.106.75.116"
 

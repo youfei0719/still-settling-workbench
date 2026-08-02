@@ -101,7 +101,35 @@ def downloaded_media_path(output_dir: Path) -> Path | None:
     return max(files, key=lambda path: path.stat().st_size, default=None)
 
 
-def download_attempt(url: str, output_dir: Path, browser: str | None) -> Path | None:
+def proxy_from_scutil(output: str) -> str | None:
+    values = dict(re.findall(r"^\s*([A-Za-z]+)\s*:\s*(.+?)\s*$", output, re.M))
+    if values.get("HTTPEnable") != "1":
+        return None
+    host = values.get("HTTPProxy", "")
+    port = values.get("HTTPPort", "")
+    if not host or not port.isdecimal() or not 1 <= int(port) <= 65535:
+        return None
+    return f"http://{host}:{port}"
+
+
+def system_http_proxy() -> str | None:
+    """Read, but never change, the macOS HTTP proxy used by desktop apps."""
+    try:
+        result = subprocess.run(
+            ["/usr/sbin/scutil", "--proxy"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return proxy_from_scutil(result.stdout)
+
+
+def download_attempt(
+    url: str, output_dir: Path, browser: str | None, proxy: str | None = None
+) -> Path | None:
     command = [
         ytdlp_binary(),
         "--no-playlist",
@@ -124,6 +152,8 @@ def download_attempt(url: str, output_dir: Path, browser: str | None) -> Path | 
     ]
     if browser:
         command.extend(["--cookies-from-browser", browser])
+    if proxy:
+        command.extend(["--proxy", proxy])
     command.append(url)
     try:
         subprocess.run(
@@ -145,12 +175,13 @@ def download_media(url: str) -> tuple[Path, tempfile.TemporaryDirectory[str]]:
         # Douyin can require a fresh anonymous visitor session.  Read it from the
         # default browser first, as BaoCut does; no cookie is copied or sent away.
         media = None
+        proxy = system_http_proxy()
         for browser in BROWSER_RETRY_ORDER:
-            media = download_attempt(url, output_dir, browser=browser)
+            media = download_attempt(url, output_dir, browser=browser, proxy=proxy)
             if media is not None:
                 break
         if media is None:
-            media = download_attempt(url, output_dir, browser=None)
+            media = download_attempt(url, output_dir, browser=None, proxy=proxy)
         if media is None:
             raise ConnectorError(
                 "抖音暂未接受本机的匿名访问会话，已自动重试；无需登录，请稍后重试。"
