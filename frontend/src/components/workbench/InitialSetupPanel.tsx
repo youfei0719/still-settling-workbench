@@ -62,18 +62,14 @@ export function InitialSetupPanel({
   const [error, setError] = useState<string | null>(null)
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogResponse | null>(null)
   const [modelTesting, setModelTesting] = useState(false)
+  const [modelTestMessage, setModelTestMessage] = useState<string | null>(null)
+  const [repositoryFeedback, setRepositoryFeedback] = useState<string | null>(null)
   const [repositoryMode, setRepositoryMode] = useState<"connect" | "create" | "local">("connect")
   const [repositoryUrl, setRepositoryUrl] = useState("")
   const [repositoryName, setRepositoryName] = useState("still-settling-skills")
   const [repositoryVisibility, setRepositoryVisibility] = useState<"private" | "public">("private")
   const [repositoryParent, setRepositoryParent] = useState("")
-  const llmModeManaged = settings?.sources.llm_mode === "environment"
-  const llmModelManaged = settings?.sources.llm_model === "environment"
-  const llmApiBaseManaged = settings?.sources.llm_api_base === "environment"
-  const llmApiKeyManaged = settings?.llm_api_key_source === "environment"
-  const llmConnectionManaged = Boolean(
-    llmModeManaged || llmModelManaged || llmApiBaseManaged || llmApiKeyManaged,
-  )
+  const llmConnectionManaged = settings?.llm_connection_managed ?? false
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -104,10 +100,12 @@ export function InitialSetupPanel({
     setError(null)
     try {
       const payload: LocalSettingsUpdatePayload = {}
-      if (!llmModeManaged) payload.llm_mode = draft.llm_mode
-      if (!llmModelManaged) payload.llm_model = draft.llm_model
-      if (!llmApiBaseManaged) payload.llm_api_base = draft.llm_api_base
-      if (!llmApiKeyManaged && draft.llm_api_key.trim()) {
+      if (!llmConnectionManaged) {
+        payload.llm_mode = draft.llm_mode
+        payload.llm_model = draft.llm_model
+        payload.llm_api_base = draft.llm_api_base
+      }
+      if (!llmConnectionManaged && draft.llm_api_key.trim()) {
         payload.llm_api_key = draft.llm_api_key
       }
       if (draft.douyin_cookie_string.trim()) {
@@ -152,8 +150,10 @@ export function InitialSetupPanel({
   const testModel = async () => {
     setModelTesting(true)
     setError(null)
+    setModelTestMessage(null)
     try {
       const result = await testConfiguredModel()
+      setModelTestMessage(result.message)
       setError(result.passed ? null : result.message)
       if (result.passed) setVerification(await verifyLocalSettings())
     } catch (event) {
@@ -168,12 +168,14 @@ export function InitialSetupPanel({
   ) => {
     setSaving(true)
     setError(null)
+    setRepositoryFeedback(null)
     try {
       const response = await operation()
       setSettings(response.settings)
       setDraft(draftFromSettings(response.settings))
       onSettingsChanged(response.settings)
       setVerification(await verifyLocalSettings())
+      setRepositoryFeedback(response.message)
     } catch (event) {
       setError(event instanceof Error ? event.message : "设置 Skill 发布项目失败")
     } finally {
@@ -248,9 +250,9 @@ export function InitialSetupPanel({
         </span>
       </div>
 
-      {Object.values(settings?.sources || {}).some((source) => source === "environment") ? (
+      {llmConnectionManaged ? (
         <div className="alert-box alert-info">
-          部分连接信息由启动环境管理。为避免在页面暴露，本页不显示具体值；修改前请在启动环境中更新。
+          当前模型连接已在服务器上启用。密钥不会显示；这里可查看实际状态、拉取模型和测试连接。
         </div>
       ) : null}
 
@@ -259,8 +261,7 @@ export function InitialSetupPanel({
         <div className="setup-grid setup-grid-model">
           <label>
             <span>模式</span>
-            <select value={llmModeManaged ? "managed" : draft?.llm_mode || "offline"} disabled={loading || llmModeManaged} onChange={(event) => updateDraft({ llm_mode: event.target.value as Draft["llm_mode"] })}>
-              {llmModeManaged ? <option value="managed">由启动环境管理</option> : null}
+            <select value={llmConnectionManaged ? settings?.llm_runtime_mode || "offline" : draft?.llm_mode || "offline"} disabled={loading || llmConnectionManaged} onChange={(event) => updateDraft({ llm_mode: event.target.value as Draft["llm_mode"] })}>
               <option value="offline">offline</option>
               <option value="optional">optional</option>
               <option value="required">required</option>
@@ -268,15 +269,15 @@ export function InitialSetupPanel({
           </label>
           <label>
             <span>模型</span>
-            <input value={llmModelManaged ? "由启动环境管理" : draft?.llm_model || ""} disabled={loading || llmModelManaged} onChange={(event) => updateDraft({ llm_model: event.target.value })} />
+            <input value={llmConnectionManaged ? settings?.llm_runtime_model || "已配置" : draft?.llm_model || ""} disabled={loading || llmConnectionManaged} onChange={(event) => updateDraft({ llm_model: event.target.value })} />
           </label>
           <label>
             <span>API Base</span>
-            <input value={llmApiBaseManaged ? "由启动环境管理" : draft?.llm_api_base || ""} placeholder="可留空" disabled={loading || llmApiBaseManaged} onChange={(event) => updateDraft({ llm_api_base: event.target.value })} />
+            <input value={llmConnectionManaged ? settings?.llm_api_base_label || "已配置" : draft?.llm_api_base || ""} placeholder="可留空" disabled={loading || llmConnectionManaged} onChange={(event) => updateDraft({ llm_api_base: event.target.value })} />
           </label>
           <label>
             <span>API Key</span>
-            <input value={llmApiKeyManaged ? "由启动环境管理" : draft?.llm_api_key || ""} type={llmApiKeyManaged ? "text" : "password"} placeholder="仅本机安全存储" disabled={loading || llmApiKeyManaged} onChange={(event) => updateDraft({ llm_api_key: event.target.value })} />
+            <input value={llmConnectionManaged ? (settings?.llm_api_key_configured ? "已安全保存" : "未配置") : draft?.llm_api_key || ""} type={llmConnectionManaged ? "text" : "password"} placeholder="仅本机安全存储" disabled={loading || llmConnectionManaged} onChange={(event) => updateDraft({ llm_api_key: event.target.value })} />
           </label>
         </div>
         <div className="export-actions">
@@ -287,12 +288,16 @@ export function InitialSetupPanel({
             <ShieldCheck size={16} /> {modelTesting ? "测试中..." : "测试连接"}
           </button>
         </div>
+        {modelTestMessage ? (
+          <div className={`alert-box ${error ? "alert-warning" : "alert-success"}`}>
+            {modelTestMessage}
+          </div>
+        ) : null}
         {modelCatalog ? (
           <div className="setup-grid setup-grid-model">
             <label>
               <span>服务商模型</span>
-              <select value={llmModelManaged ? "managed" : draft?.llm_model || ""} disabled={loading || saving || llmModelManaged} onChange={(event) => updateDraft({ llm_model: event.target.value })}>
-                {llmModelManaged ? <option value="managed">由启动环境管理</option> : null}
+              <select value={llmConnectionManaged ? settings?.llm_runtime_model || "" : draft?.llm_model || ""} disabled={loading || saving || llmConnectionManaged} onChange={(event) => updateDraft({ llm_model: event.target.value })}>
                 <option value="">手动填写模型名</option>
                 {modelCatalog.models.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -303,8 +308,8 @@ export function InitialSetupPanel({
             </label>
             <div className="setup-action-items">
               {modelCatalog.recommended_model
-                ? llmModelManaged
-                  ? `模型由启动环境固定。${modelCatalog.message}`
+                ? llmConnectionManaged
+                  ? `当前模型为 ${settings?.llm_runtime_model || "已配置"}。${modelCatalog.message}`
                   : `已预选推荐模型。${modelCatalog.message} 确认或更换后，点击“保存模型设置”生效。`
                 : modelCatalog.message}
             </div>
@@ -354,6 +359,13 @@ export function InitialSetupPanel({
             {repositoryMode === "connect" ? "连接并自动配置" : repositoryMode === "create" ? "创建 GitHub 项目" : "创建本地项目"}
           </button>
         </div>
+        {repositoryFeedback ? (
+          <div className="alert-box alert-success">{repositoryFeedback}</div>
+        ) : settings?.publish_configured && settings.skill_remote_url ? (
+          <div className="alert-box alert-success">
+            已连接 GitHub 仓库：{settings.skill_remote_url}
+          </div>
+        ) : null}
       </div>
 
       <div className="setup-section">
@@ -371,7 +383,7 @@ export function InitialSetupPanel({
           {verification.action_items.map((item) => <li key={item}>{item}</li>)}
         </ul>
       ) : null}
-      {error ? <div className="alert-box alert-warning">{error}</div> : null}
+      {error && error !== modelTestMessage ? <div className="alert-box alert-warning">{error}</div> : null}
       <div className="export-actions">
         <button type="button" className="secondary-button" onClick={() => void load()} disabled={saving}>
           <RefreshCw size={16} /> 读取设置
