@@ -5,6 +5,7 @@ from app.script_workbench import (
     build_primary_transcript,
     classify_douyin_download_error,
     correct_primary_transcript,
+    external_link_gate,
     extract_share_context_terms,
     find_transcript_anomalies,
     normalize_douyin_url_input,
@@ -176,8 +177,7 @@ def test_link_task_preserves_skipped_status_and_offers_manual_inputs(
     ]
 
 
-def test_cookie_block_requires_a_valid_browser_session(monkeypatch) -> None:
-    from app import script_workbench
+def test_server_media_task_does_not_require_a_browser_session() -> None:
 
     code, title, _detail, actions = classify_douyin_download_error(
         "Cookies may be invalid or incomplete; Empty 200 response (anti-bot)"
@@ -186,14 +186,13 @@ def test_cookie_block_requires_a_valid_browser_session(monkeypatch) -> None:
     assert title == "需要有效 Cookie 或登录态"
     assert any("Chrome" in item for item in actions)
 
-    monkeypatch.setattr(script_workbench, "is_ytdlp_configured", lambda: True)
-    monkeypatch.setattr(script_workbench, "is_douyin_downloader_configured", lambda: False)
-    gate = script_workbench.external_link_gate(
+    gate = external_link_gate(
         "https://v.douyin.com/public/", run_link=False
     )
     assert gate["status"] == "ready"
     assert gate["cookie_configured"] is False
-    assert any("浏览器会话" in item for item in gate["action_items"])
+    assert gate["downloader_mode"] == "server_media_task"
+    assert any("无需安装" in item for item in gate["action_items"])
 
 
 def test_ytdlp_reads_browser_cookies_by_default(monkeypatch, tmp_path) -> None:

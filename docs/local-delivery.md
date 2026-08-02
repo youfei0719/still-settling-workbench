@@ -120,6 +120,9 @@ uv run python scripts/verify_workbench_persistence.py --mode configured --migrat
 | 变量 | 用途 |
 | --- | --- |
 | `WORKBENCH_MEDIA_DIR` | 视频、音频、关键帧临时保存目录 |
+| `WORKBENCH_YTDLP_CMD` / `WORKBENCH_FFMPEG_CMD` | 主站媒体任务使用的服务器可执行文件绝对路径 |
+| `WORKBENCH_TRANSCRIPTION_API_BASE` | 支持 `POST /audio/transcriptions` 的外部语音转写 API 地址 |
+| `WORKBENCH_TRANSCRIPTION_MODEL` / `WORKBENCH_TRANSCRIPTION_API_KEY` | 外部语音转写模型与凭据；不能使用仅文本的 LLM 中转站 |
 | `WORKBENCH_DB_MODE` | `auto` / `off`，默认优先 PostgreSQL |
 | `WORKBENCH_LLM_MODE` | `offline` / `optional` / `required` |
 | `WORKBENCH_LLM_MODEL` | LiteLLM 模型名 |
@@ -134,7 +137,7 @@ uv run python scripts/verify_workbench_persistence.py --mode configured --migrat
 | `WORKBENCH_DOUYIN_PUBLIC_ATTEMPTS` | 公开链接提取的自动尝试次数，默认 `2` |
 | `WORKBENCH_DOUYIN_RETRY_DELAY_SECONDS` | 自动重试的基础等待秒数，默认 `1` |
 
-公开链接提取不读取浏览器 Cookie，也不需要登录抖音。不要把 API Key 写进仓库。
+生产工作台的公开链接提取不读取浏览器 Cookie，也不需要网页用户安装本机连接器。视频、音频仅在同一台主站服务器的临时目录处理，完成或失败后删除；长期保留的只有文稿、分析历史和 Skill。不要把 API Key 写进仓库。
 
 ## 抖音链接边界
 

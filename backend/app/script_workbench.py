@@ -2194,12 +2194,12 @@ def external_link_gate(link: Optional[str] = None, run_link: bool = False) -> di
     normalized_link = normalize_douyin_url_input(link or "") if link else ""
     result: dict = {
         "passed": bool(normalized_link),
-        "status": "local_connector_required",
+        "status": "ready" if normalized_link else "missing_link",
         "downloader_configured": False,
         "yt_dlp_configured": False,
         "douyin_downloader_configured": False,
-        "resolver_chain": ["local-connector"],
-        "downloader_mode": "local_connector",
+        "resolver_chain": ["server-media-task"],
+        "downloader_mode": "server_media_task",
         "cookie_configured": False,
         "input_link": link or "",
         "normalized_link": normalized_link,
@@ -2210,7 +2210,7 @@ def external_link_gate(link: Optional[str] = None, run_link: bool = False) -> di
         result["action_items"].append("粘贴完整抖音分享文案或 v.douyin.com 短链。")
     else:
         result["action_items"].append(
-            "链接下载与转写仅在访问者电脑上的本机连接器执行；服务器不会运行下载测试。"
+            "主站会在临时目录下载公开媒体并提交转写；访问者无需安装本机连接器或登录抖音。"
         )
     return result
 

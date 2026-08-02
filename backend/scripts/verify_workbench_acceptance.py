@@ -187,7 +187,7 @@ def verify_external_link_gate_without_cookie() -> dict[str, Any]:
         "ready_without_cookie": result["ready_to_test"] is True,
         "does_not_preblock_cookie": result["status"] == "ready",
         "cookie_state_visible": result["cookie_configured"] is False,
-        "explains_login_free_retry": any("免登录" in item for item in result["action_items"]),
+        "explains_server_processing": any("主站" in item for item in result["action_items"]),
     }
     return {"passed": all(checks.values()), "checks": checks}
 

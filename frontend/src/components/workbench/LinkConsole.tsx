@@ -7,66 +7,67 @@ import {
   Link2,
   LoaderCircle,
   ShieldAlert,
-} from "lucide-react"
-import { type ReactNode, useEffect, useMemo, useState } from "react"
+} from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type {
   AnalyzeTextResponse,
   LinkTaskResponse,
+  ServerMediaTask,
   TemplatePattern,
   VideoUploadResponse,
-} from "@/types/workbench"
-import { Badge, Card, EmptyState, SectionHeader } from "./ui"
+} from "@/types/workbench";
+import { Badge, Card, EmptyState, SectionHeader } from "./ui";
 
-type ProgressState = "waiting" | "active" | "complete" | "ready" | "failed"
+type ProgressState = "waiting" | "active" | "complete" | "ready" | "failed";
 
 function manuscriptParagraphs(content: string) {
   const normalized = content
     .replace(/\r/g, "")
     .replace(/[A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*){2,}/g, " ")
     .replace(/[ \t]+/g, " ")
-    .trim()
-  if (!normalized) return []
+    .trim();
+  if (!normalized) return [];
 
   const explicitParagraphs = normalized
     .split(/\n\s*\n+/)
     .map((paragraph) => paragraph.replace(/\s*\n\s*/g, "").trim())
-    .filter(Boolean)
+    .filter(Boolean);
 
-  if (explicitParagraphs.length > 1) return explicitParagraphs
+  if (explicitParagraphs.length > 1) return explicitParagraphs;
 
   const sentences = normalized
     .replace(/\s*\n\s*/g, "")
     .match(/[^。！？!?；;]+[。！？!?；;]?/g)
     ?.map((sentence) => sentence.trim())
-    .filter(Boolean) || [normalized]
+    .filter(Boolean) || [normalized];
 
-  const paragraphs: string[] = []
-  let current = ""
+  const paragraphs: string[] = [];
+  let current = "";
   for (const sentence of sentences) {
     if (current && current.length + sentence.length > 90) {
-      paragraphs.push(current)
-      current = sentence
+      paragraphs.push(current);
+      current = sentence;
     } else {
-      current += sentence
+      current += sentence;
     }
   }
-  if (current) paragraphs.push(current)
-  return paragraphs
+  if (current) paragraphs.push(current);
+  return paragraphs;
 }
 
 function editableManuscript(content: string) {
-  return manuscriptParagraphs(content).join("\n\n")
+  return manuscriptParagraphs(content).join("\n\n");
 }
 
 function preferredTranscript(videoUpload: VideoUploadResponse | null) {
-  const contentText = videoUpload?.transcript?.content_text?.trim() || ""
-  const asrText = videoUpload?.asr_text?.trim() || ""
+  const contentText = videoUpload?.transcript?.content_text?.trim() || "";
+  const asrText = videoUpload?.asr_text?.trim() || "";
   if (asrText.length >= 10 && contentText.length > asrText.length * 1.25) {
-    return asrText
+    return asrText;
   }
   return (
     contentText || [asrText, videoUpload?.ocr_text].filter(Boolean).join("\n")
-  )
+  );
 }
 
 function ProgressDisclosure({
@@ -75,10 +76,10 @@ function ProgressDisclosure({
   state,
   children,
 }: {
-  title: string
-  summary: string
-  state: ProgressState
-  children: ReactNode
+  title: string;
+  summary: string;
+  state: ProgressState;
+  children: ReactNode;
 }) {
   const StateIcon =
     state === "complete"
@@ -89,7 +90,7 @@ function ProgressDisclosure({
           ? CircleDot
           : state === "failed"
             ? ShieldAlert
-            : Circle
+            : Circle;
   const stateLabel =
     state === "complete"
       ? "已完成"
@@ -99,7 +100,7 @@ function ProgressDisclosure({
           ? "待确认"
           : state === "failed"
             ? "未完成"
-            : "等待中"
+            : "等待中";
 
   return (
     <details className={`progress-disclosure is-${state}`}>
@@ -120,13 +121,14 @@ function ProgressDisclosure({
       </summary>
       <div className="progress-step-detail">{children}</div>
     </details>
-  )
+  );
 }
 
 export function LinkConsole({
   url,
   loading,
   error,
+  serverMediaTask,
   linkTask,
   videoUpload,
   analysis,
@@ -136,72 +138,75 @@ export function LinkConsole({
   onViewAnalysis,
   evidenceTarget,
 }: {
-  url: string
-  loading: boolean
-  error: string | null
-  linkTask: LinkTaskResponse | null
-  videoUpload: VideoUploadResponse | null
-  analysis: AnalyzeTextResponse | null
-  onUrlChange: (value: string) => void
-  onAnalyzeLink: () => void
-  onConfirmTranscript: (content: string) => void
-  onViewAnalysis: () => void
-  evidenceTarget: TemplatePattern | null
+  url: string;
+  loading: boolean;
+  error: string | null;
+  serverMediaTask: ServerMediaTask | null;
+  linkTask: LinkTaskResponse | null;
+  videoUpload: VideoUploadResponse | null;
+  analysis: AnalyzeTextResponse | null;
+  onUrlChange: (value: string) => void;
+  onAnalyzeLink: () => void;
+  onConfirmTranscript: (content: string) => void;
+  onViewAnalysis: () => void;
+  evidenceTarget: TemplatePattern | null;
 }) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [reviewText, setReviewText] = useState("")
-  const [reviewConfirmed, setReviewConfirmed] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
 
   useEffect(() => {
     if (!loading) {
-      setElapsedSeconds(0)
-      return
+      setElapsedSeconds(0);
+      return;
     }
-    const startedAt = Date.now()
+    const startedAt = Date.now();
     const timer = window.setInterval(() => {
       setElapsedSeconds(
         Math.max(1, Math.floor((Date.now() - startedAt) / 1000)),
-      )
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [loading])
+      );
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
-  const transcriptText = preferredTranscript(videoUpload)
-  const hasTranscript = transcriptText.trim().length >= 10
-  const hasFailed = Boolean(linkTask && linkTask.parser_status !== "completed")
+  const transcriptText = preferredTranscript(videoUpload);
+  const hasTranscript = transcriptText.trim().length >= 10;
+  const hasFailed = Boolean(linkTask && linkTask.parser_status !== "completed");
   const qualityNeedsReview =
     linkTask?.parser_error_code === "transcript_quality" ||
-    videoUpload?.correction_status === "needs_review"
-  const extractionFailed = hasFailed && !qualityNeedsReview
-  const canSubmit = url.trim().length >= 8 && !loading
+    videoUpload?.correction_status === "needs_review";
+  const extractionFailed = hasFailed && !qualityNeedsReview;
+  const canSubmit = url.trim().length >= 8 && !loading;
   const transcriptParagraphs = useMemo(
     () => manuscriptParagraphs(transcriptText),
     [transcriptText],
-  )
-  const sourceVideo = videoUpload?.source_video || linkTask?.source_video
-  const isExtracting = loading && !linkTask
-  const isAnalyzing = loading && hasTranscript && !analysis
+  );
+  const sourceVideo = videoUpload?.source_video || linkTask?.source_video;
+  const isExtracting = loading && !linkTask;
+  const isAnalyzing = loading && hasTranscript && !analysis;
   const loadingMessage = isAnalyzing
     ? "正在拆解稿件的开头、推进、情绪和结尾"
-    : elapsedSeconds >= 12
-      ? "正在本机下载视频并识别语音，长视频需要多一点时间"
-      : elapsedSeconds >= 4
-        ? "正在本机提取视频里的真实稿件"
-        : "正在将链接交给本机媒体连接器"
+    : serverMediaTask?.stage || serverMediaTask?.stage_detail
+      ? serverMediaTask.stage || serverMediaTask.stage_detail
+      : elapsedSeconds >= 12
+        ? "正在服务器下载视频并识别语音，长视频需要多一点时间"
+        : elapsedSeconds >= 4
+          ? "正在从公开视频提取真实稿件"
+          : "正在将链接交给主站媒体任务";
 
   useEffect(() => {
     if (qualityNeedsReview && transcriptText) {
-      setReviewText(editableManuscript(transcriptText))
-      setReviewConfirmed(false)
+      setReviewText(editableManuscript(transcriptText));
+      setReviewConfirmed(false);
     }
-  }, [qualityNeedsReview, transcriptText])
+  }, [qualityNeedsReview, transcriptText]);
 
   return (
     <div className="page-grid page-grid-workbench">
       <Card className="input-panel">
         <SectionHeader
           title="沉淀写作 Skill"
-          description="粘贴完整的抖音分享文案或短链即可开始。本机连接器会下载并转写，云端只接收文稿用于分析、历史和 Skill 沉淀。"
+          description="粘贴完整的抖音分享文案或短链即可开始。主站会免登录临时处理媒体，只保留真实文稿、分析历史和 Skill。"
         />
 
         {evidenceTarget ? (
@@ -637,5 +642,5 @@ export function LinkConsole({
         )}
       </Card>
     </div>
-  )
+  );
 }
