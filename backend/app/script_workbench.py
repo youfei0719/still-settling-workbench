@@ -2272,15 +2272,13 @@ def external_llm_gate(expect_model: bool = False) -> dict:
     from app.workbench_llm import get_llm_config
 
     config = get_llm_config()
-    settings = read_local_settings_status()
-    model_source = settings.get("sources", {}).get("llm_model")
     key_ready = credential_present()
     model_ready = config.mode != "offline" and key_ready
     result = {
         "passed": model_ready if expect_model else config.mode != "offline",
         "status": "ready" if model_ready else "missing_external_input",
         "mode": config.mode,
-        "model": "由启动环境管理" if model_source == "environment" else config.model,
+        "model": config.model,
         "api_base_configured": bool(config.api_base),
         "api_key_configured": key_ready,
         "expect_model": expect_model,

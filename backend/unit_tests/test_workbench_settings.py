@@ -150,11 +150,14 @@ def test_external_gate_never_returns_key_hints(monkeypatch) -> None:
     from app import script_workbench
 
     monkeypatch.setenv("WORKBENCH_LLM_MODE", "optional")
+    monkeypatch.setenv("WORKBENCH_LLM_MODEL", "gpt-test-model")
     monkeypatch.setenv("WORKBENCH_LLM_API_KEY", "gate-test-value")
 
     result = script_workbench.external_llm_gate(expect_model=True)
 
     assert result["api_key_configured"] is True
+    assert result["model"] == "gpt-test-model"
+    assert "由启动环境管理" not in str(result)
     assert "api_key_hint" not in result
     assert "gate-test-value" not in str(result)
 
