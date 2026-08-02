@@ -11,6 +11,9 @@ APP_ROOT="${APP_ROOT:-/opt/settling-workbench}"
 APP_USER="${APP_USER:-settling-workbench}"
 
 dnf install -y ffmpeg
+if ! "${APP_ROOT}/.venv/bin/python" -m pip --version >/dev/null 2>&1; then
+  "${APP_ROOT}/.venv/bin/python" -m ensurepip --upgrade
+fi
 "${APP_ROOT}/.venv/bin/python" -m pip install --upgrade "yt-dlp[default,curl-cffi]"
 
 install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 \
