@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 from http import HTTPStatus
+from http.client import HTTPConnection, HTTPSConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Final
@@ -26,6 +27,7 @@ from urllib.parse import urlparse
 DEFAULT_PORT: Final = 8765
 MAX_REQUEST_BYTES: Final = 16 * 1024
 MAX_MEDIA_BYTES: Final = 512 * 1024 * 1024
+MAX_API_RESPONSE_BYTES: Final = 8 * 1024 * 1024
 ALLOWED_HOSTS: Final = ("douyin.com", "iesdouyin.com")
 DEFAULT_ORIGINS: Final = {
     "http://127.0.0.1:5174",
@@ -161,6 +163,57 @@ def download_media(url: str) -> tuple[Path, tempfile.TemporaryDirectory[str]]:
         raise
 
 
+def upload_target_is_allowed(upload_url: str, origin: str) -> bool:
+    """Only relay a video to the workbench API served by the calling origin."""
+    target = urlparse(upload_url)
+    caller = urlparse(origin)
+    if not all((target.scheme, target.hostname, caller.scheme, caller.hostname)):
+        return False
+    if target.username or target.password:
+        return False
+    try:
+        target_port = target.port or (443 if target.scheme == "https" else 80)
+        caller_port = caller.port or (443 if caller.scheme == "https" else 80)
+    except ValueError:
+        return False
+    return (
+        target.scheme == caller.scheme
+        and target.hostname == caller.hostname
+        and target_port == caller_port
+        and target.path == "/settling-workbench-api/api/v1/script-workbench/upload-video"
+    )
+
+
+def upload_media(
+    media: Path, upload_url: str, authorization: str
+) -> tuple[int, bytes]:
+    """Stream media directly to the trusted workbench API without a browser proxy."""
+    target = urlparse(upload_url)
+    connection_type = HTTPSConnection if target.scheme == "https" else HTTPConnection
+    connection = connection_type(target.hostname, target.port, timeout=300)
+    request_target = target.path + (f"?{target.query}" if target.query else "")
+    content_type = mimetypes.guess_type(media.name)[0] or "application/octet-stream"
+    try:
+        connection.putrequest("POST", request_target)
+        connection.putheader("Content-Type", content_type)
+        connection.putheader("Content-Length", str(media.stat().st_size))
+        if authorization:
+            connection.putheader("Authorization", authorization)
+        connection.endheaders()
+        with media.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                connection.send(chunk)
+        response = connection.getresponse()
+        body = response.read(MAX_API_RESPONSE_BYTES + 1)
+        if len(body) > MAX_API_RESPONSE_BYTES:
+            raise ConnectorError("工作台服务返回的数据过大，已停止读取。")
+        return response.status, body
+    except OSError as exc:
+        raise ConnectorError("本机无法直连工作台服务，请检查网络后重试。") from exc
+    finally:
+        connection.close()
+
+
 class ConnectorHandler(BaseHTTPRequestHandler):
     server_version = "StillSettlingConnector/1.0"
 
@@ -194,6 +247,14 @@ class ConnectorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_api_response(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_cors_headers()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self) -> None:  # noqa: N802
         if not self.origin_is_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
@@ -209,7 +270,7 @@ class ConnectorHandler(BaseHTTPRequestHandler):
         self.send_json(HTTPStatus.OK, {"status": "ready"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/v1/extract":
+        if self.path not in {"/v1/extract", "/v1/extract-and-upload"}:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         if not self.origin_is_allowed():
@@ -229,6 +290,30 @@ class ConnectorHandler(BaseHTTPRequestHandler):
             return
 
         try:
+            if self.path == "/v1/extract-and-upload":
+                upload_url = payload.get("upload_url")
+                authorization = payload.get("authorization", "")
+                origin = self.headers.get("Origin", "").rstrip("/")
+                if not isinstance(upload_url, str) or not upload_target_is_allowed(
+                    upload_url, origin
+                ):
+                    raise ConnectorError("本机连接器拒绝了非当前工作台的上传地址。")
+                if not isinstance(authorization, str):
+                    raise ConnectorError("本机连接器收到的工作台授权无效。")
+                status, response_body = upload_media(media, upload_url, authorization)
+                if not 200 <= status < 300:
+                    try:
+                        response_payload = json.loads(response_body)
+                        message = response_payload.get("detail") or response_payload.get("message")
+                    except (json.JSONDecodeError, AttributeError):
+                        message = None
+                    self.send_json(
+                        HTTPStatus.BAD_GATEWAY,
+                        {"error": str(message or f"工作台上传失败：{status}")},
+                    )
+                    return
+                self.send_api_response(status, response_body)
+                return
             content_type = mimetypes.guess_type(media.name)[0] or "application/octet-stream"
             self.send_response(HTTPStatus.OK)
             self.send_cors_headers()
@@ -240,6 +325,8 @@ class ConnectorHandler(BaseHTTPRequestHandler):
             self.end_headers()
             with media.open("rb") as stream:
                 shutil.copyfileobj(stream, self.wfile)
+        except ConnectorError as exc:
+            self.send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
         finally:
             temporary_directory.cleanup()
 

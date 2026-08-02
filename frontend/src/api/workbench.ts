@@ -57,11 +57,27 @@ export class WorkbenchApiError extends Error {
   }
 }
 
-function authorizationHeader(): Record<string, string> {
+export function workbenchAuthorizationHeader(): Record<string, string> {
   const token =
     window.localStorage.getItem(CPM_ACCESS_TOKEN_KEY) ??
     window.localStorage.getItem(ACCESS_TOKEN_KEY)
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export function videoUploadUrl(
+  runExtractors = false,
+  source?: { url?: string; contextText?: string },
+) {
+  const query = new URLSearchParams({
+    file_name: "source.mp4",
+    run_extractors: runExtractors ? "true" : "false",
+  })
+  if (source?.url) query.set("source_url", source.url)
+  if (source?.contextText) query.set("context_text", source.contextText)
+  return new URL(
+    `${API_BASE}/api/v1/script-workbench/upload-video?${query.toString()}`,
+    window.location.origin,
+  ).toString()
 }
 
 async function readApiErrorMessage(response: Response, fallback: string) {
@@ -93,7 +109,7 @@ async function readApiErrorMessage(response: Response, fallback: string) {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers)
   headers.set("Content-Type", "application/json")
-  for (const [name, value] of Object.entries(authorizationHeader())) {
+  for (const [name, value] of Object.entries(workbenchAuthorizationHeader())) {
     headers.set(name, value)
   }
   const response = await fetch(`${API_BASE}/api/v1/script-workbench${path}`, {
@@ -336,7 +352,7 @@ export async function uploadVideo(
       method: "POST",
       headers: {
         "Content-Type": file.type || "application/octet-stream",
-        ...authorizationHeader(),
+        ...workbenchAuthorizationHeader(),
       },
       body: file,
     },

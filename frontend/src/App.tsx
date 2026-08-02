@@ -16,7 +16,8 @@ import {
   retryVideoExtractionTask,
   startVideoExtractionTask,
   submitLinkTask,
-  uploadVideo,
+  videoUploadUrl,
+  workbenchAuthorizationHeader,
   updateSkillGovernance,
   updateTemplateReview,
   verifyLocalSettings,
@@ -25,7 +26,7 @@ import {
 } from "@/api/workbench"
 import { fallbackOverview } from "@/data/fallback"
 import {
-  extractWithLocalConnector,
+  extractAndUploadWithLocalConnector,
   LocalConnectorExtractionError,
   LocalConnectorUnavailableError,
 } from "@/lib/localConnector"
@@ -261,11 +262,11 @@ export default function App() {
       let connectorUnavailable = false
       let response: LinkTaskResponse
       try {
-        const localVideo = await extractWithLocalConnector(url)
-        const upload = await uploadVideo(localVideo, true, {
+        const upload = await extractAndUploadWithLocalConnector(
           url,
-          contextText: url,
-        })
+          videoUploadUrl(true, { url, contextText: url }),
+          workbenchAuthorizationHeader().Authorization,
+        )
         response = localConnectorLinkTask(upload)
       } catch (event) {
         if (event instanceof LocalConnectorExtractionError) throw event

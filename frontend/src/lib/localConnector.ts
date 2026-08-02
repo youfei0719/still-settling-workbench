@@ -1,3 +1,5 @@
+import type { VideoUploadResponse } from "@/types/workbench"
+
 const LOCAL_CONNECTOR_URL = "http://127.0.0.1:8765"
 
 export class LocalConnectorUnavailableError extends Error {}
@@ -43,4 +45,37 @@ export async function extractWithLocalConnector(url: string): Promise<File> {
   return new File([file], responseFileName(response), {
     type: response.headers.get("Content-Type") || "video/mp4",
   })
+}
+
+export async function extractAndUploadWithLocalConnector(
+  url: string,
+  uploadUrl: string,
+  authorization?: string,
+): Promise<VideoUploadResponse> {
+  let response: Response
+  try {
+    response = await fetch(`${LOCAL_CONNECTOR_URL}/v1/extract-and-upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, upload_url: uploadUrl, authorization }),
+      credentials: "omit",
+    })
+  } catch {
+    throw new LocalConnectorUnavailableError(
+      "本机提取连接器未启动，正在尝试服务器提取。",
+    )
+  }
+
+  if (!response.ok) {
+    let message = "本机连接器没有返回可用视频。"
+    try {
+      const payload = (await response.json()) as { error?: unknown }
+      if (typeof payload.error === "string") message = payload.error
+    } catch {
+      // Keep the safe generic message for non-JSON local connector failures.
+    }
+    throw new LocalConnectorExtractionError(message)
+  }
+
+  return response.json() as Promise<VideoUploadResponse>
 }

@@ -52,3 +52,20 @@ def test_downloader_prefers_chrome_session_and_baocut_compatible_mp4_format(
     assert media == tmp_path / "source.mp4"
     assert commands[0][commands[0].index("--cookies-from-browser") + 1] == "chrome"
     assert commands[0][commands[0].index("--format") + 1] == connector.PREFERRED_MP4_FORMAT
+
+
+def test_upload_target_must_be_the_calling_workbench_api() -> None:
+    origin = "http://170.106.75.116"
+
+    assert connector.upload_target_is_allowed(
+        "http://170.106.75.116/settling-workbench-api/api/v1/script-workbench/upload-video?run_extractors=true",
+        origin,
+    )
+    assert not connector.upload_target_is_allowed(
+        "http://example.com/settling-workbench-api/api/v1/script-workbench/upload-video",
+        origin,
+    )
+    assert not connector.upload_target_is_allowed(
+        "http://170.106.75.116/api/v1/script-workbench/upload-video",
+        origin,
+    )
