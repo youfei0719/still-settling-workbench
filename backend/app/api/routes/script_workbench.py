@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.script_workbench import (
     AnalyzeTextRequest,
@@ -25,7 +25,6 @@ from app.script_workbench import (
     HumanReviewTemplateResponse,
     HumanReviewUpdateRequest,
     LinkDiagnosticRecord,
-    LinkTaskRequest,
     LinkTaskResponse,
     LocalSettingsStatus,
     LocalSettingsUpdateRequest,
@@ -52,14 +51,12 @@ from app.script_workbench import (
     TemplatePattern,
     TemplateReviewUpdateRequest,
     UploadTextRequest,
-    VideoExtractionRequest,
     VideoExtractionTask,
     VideoUploadResponse,
     WorkbenchCapabilities,
     WorkbenchOverview,
     WritingPresetCreateRequest,
     build_codex_skill_pack,
-    cancel_video_extraction_task,
     capabilities,
     compact_rewrite_facts,
     connect_github_skill_repository,
@@ -67,11 +64,8 @@ from app.script_workbench import (
     copy_generated_script_version,
     create_draft_rewrite_task,
     create_github_skill_repository,
-    create_link_task,
     create_text_analysis,
     create_upload_text_analysis,
-    create_video_extraction_task,
-    create_video_upload_result,
     create_writing_preset_from_draft,
     create_local_skill_repository,
     deduplicate_templates,
@@ -80,9 +74,7 @@ from app.script_workbench import (
     external_gate_report,
     generate_hotspot,
     get_draft_rewrite_task,
-    get_video_extraction_task,
     list_link_diagnostics,
-    list_video_extraction_tasks,
     match_writing_skills,
     media_root,
     model_runtime_status,
@@ -93,7 +85,6 @@ from app.script_workbench import (
     read_human_review_template,
     read_local_skill_templates,
     publish_codex_skill_pack_to_github,
-    retry_video_extraction_task,
     run_skill_release_evaluation,
     rewrite_draft,
     risk_check,
@@ -456,10 +447,14 @@ def warmup_model_runtime(payload: ModelWarmupRequest) -> Any:
 
 
 @router.post("/link-task", response_model=LinkTaskResponse)
-def submit_link_task(payload: LinkTaskRequest) -> Any:
-    response = create_link_task(payload)
-    persist_link_task_if_available(response)
-    return response
+def submit_link_task() -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "云端媒体提取已关闭。请使用本机连接器完成下载和转写；"
+            "服务器只接收文稿、分析结果和 Skill 历史。"
+        ),
+    )
 
 
 @router.get("/link-diagnostics", response_model=list[LinkDiagnosticRecord])
@@ -491,71 +486,58 @@ def upload_text(payload: UploadTextRequest) -> Any:
 
 
 @router.post("/upload-video", response_model=VideoUploadResponse)
-async def upload_video(
-    request: Request,
-    file_name: str = Query(default="uploaded-video.mp4"),
-    run_extractors: bool = Query(default=False),
-    source_url: Optional[str] = Query(default=None),
-    context_text: str = Query(default=""),
-) -> Any:
-    material_path, safe_name = await save_video_upload(request, file_name=file_name)
-    return create_video_upload_result(
-        safe_name,
-        material_path,
-        run_extractors=run_extractors,
-        context_text=context_text,
-        source_url=source_url,
+async def upload_video() -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "云端视频上传已关闭。请由本机连接器完成下载和转写后提交文稿；"
+            "服务器不会保存视频、音频或浏览器会话。"
+        ),
     )
 
 
-@router.post(
-    "/video-extraction-tasks/{source_video_id}", response_model=VideoExtractionTask
-)
-def start_video_extraction_task(
-    source_video_id: str,
-    payload: VideoExtractionRequest = Body(default_factory=VideoExtractionRequest),
-) -> Any:
-    try:
-        return create_video_extraction_task(source_video_id, payload)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="未找到已上传视频素材。") from exc
+@router.post("/video-extraction-tasks/{source_video_id}", response_model=VideoExtractionTask)
+def start_video_extraction_task() -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail="云端视频提取已关闭。请使用本机连接器完成转写后提交文稿。",
+    )
 
 
 @router.get("/video-extraction-tasks", response_model=list[VideoExtractionTask])
-def read_video_extraction_tasks(limit: int = Query(default=20, ge=1, le=100)) -> Any:
-    return list_video_extraction_tasks(limit=limit)
+def read_video_extraction_tasks(_limit: int = Query(default=20, ge=1, le=100)) -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail="云端视频提取已关闭，服务器不再保存或处理媒体任务。",
+    )
 
 
 @router.get("/video-extraction-tasks/{task_id}", response_model=VideoExtractionTask)
-def read_video_extraction_task(task_id: str) -> Any:
-    try:
-        return get_video_extraction_task(task_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="未找到视频提取任务。") from exc
+def read_video_extraction_task(_task_id: str) -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail="云端视频提取已关闭，服务器不再保存或处理媒体任务。",
+    )
 
 
 @router.post(
     "/video-extraction-tasks/{task_id}/cancel", response_model=VideoExtractionTask
 )
-def cancel_extraction_task(task_id: str) -> Any:
-    try:
-        return cancel_video_extraction_task(task_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="未找到视频提取任务。") from exc
+def cancel_extraction_task(_task_id: str) -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail="云端视频提取已关闭，服务器不再保存或处理媒体任务。",
+    )
 
 
 @router.post(
     "/video-extraction-tasks/{task_id}/retry", response_model=VideoExtractionTask
 )
-def retry_extraction_task(task_id: str) -> Any:
-    try:
-        return retry_video_extraction_task(task_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail="未找到可重试的视频提取任务。"
-        ) from exc
+def retry_extraction_task(_task_id: str) -> Any:
+    raise HTTPException(
+        status_code=410,
+        detail="云端视频提取已关闭。请使用本机连接器重新下载并转写。",
+    )
 
 
 @router.post("/generate-hotspot", response_model=GenerateHotspotResponse)

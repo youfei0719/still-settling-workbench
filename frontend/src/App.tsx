@@ -1,34 +1,31 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useState } from "react"
+import {
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 import {
   analyzeText,
   approveAndPublishWritingSkill,
-  cancelVideoExtractionTask,
   createHumanReviewTemplate,
   createWritingSkill,
   fetchCodexSkillPack,
   fetchExternalGates,
   fetchLocalSettings,
-  fetchModelStatus,
   fetchOverview,
-  fetchVideoExtractionTask,
-  fetchVideoExtractionTasks,
   publishCodexSkillPackToGithub,
-  retryVideoExtractionTask,
-  startVideoExtractionTask,
-  submitLinkTask,
-  videoUploadUrl,
-  workbenchAuthorizationHeader,
   updateSkillGovernance,
   updateTemplateReview,
   verifyLocalSettings,
-  warmupModels,
   WorkbenchApiError,
 } from "@/api/workbench"
 import { fallbackOverview } from "@/data/fallback"
 import {
-  extractAndUploadWithLocalConnector,
+  extractAndTranscribeWithLocalConnector,
   LocalConnectorExtractionError,
   LocalConnectorUnavailableError,
+  type LocalTranscriptResponse,
 } from "@/lib/localConnector"
 import type {
   AnalyzeTextResponse,
@@ -37,12 +34,10 @@ import type {
   ExternalGateReport,
   LinkTaskResponse,
   LocalSettingsStatus,
-  ModelRuntimeStatus,
-  SkillGovernancePayload,
   SkillApprovalAndPublishResponse,
+  SkillGovernancePayload,
   TemplatePattern,
   TemplateReviewPayload,
-  VideoExtractionTask,
   VideoUploadResponse,
   WorkbenchOverview,
   WritingPresetCreatePayload,
@@ -52,65 +47,75 @@ import { AppShell, type PageKey } from "./components/workbench/AppShell"
 import { CodexSyncPanel } from "./components/workbench/CodexSyncPanel"
 import { InitialSetupPanel } from "./components/workbench/InitialSetupPanel"
 import { LinkConsole } from "./components/workbench/LinkConsole"
-import { MaterialTaskPanel } from "./components/workbench/MaterialTaskPanel"
 import { ReviewExport } from "./components/workbench/ReviewExport"
 import { TemplateLibrary } from "./components/workbench/TemplateLibrary"
 
-const ACTIVE_EXTRACTION_TASK_KEY = "douyin-workbench-active-extraction-task-id"
-function linkExtractionErrorMessage(response: LinkTaskResponse) {
-  if (
-    response.parser_error_code === "downloader_missing" ||
-    response.parser_error_code === "downloader_disabled"
-  ) {
-    return "本机链接提取能力没有开启。请到系统诊断启用后重试；系统不会用标题或描述猜内容。"
+function localConnectorVideoUpload(
+  transcript: LocalTranscriptResponse,
+): VideoUploadResponse {
+  const sourceId = `local-${Date.now()}`
+  const source = {
+    id: sourceId,
+    input_type: "transcript" as const,
+    title: transcript.title,
+    url: transcript.source_url,
+    status: "completed" as const,
+    material_path: "仅在本机临时处理，转写后已删除",
+    created_at: new Date().toISOString(),
   }
-  if (response.parser_error_code === "timeout") {
-    return "视频下载速度过慢。系统已自动保留临时分片并续传重试，但仍未在限定时间内完成；稍后重试即可，系统不会用标题或描述猜内容。"
+  return {
+    source_video: source,
+    audio_path: "仅在本机临时处理，转写后已删除",
+    frame_paths: [],
+    extraction_status: "completed",
+    asr_status: "completed",
+    asr_provider: transcript.provider,
+    asr_text: transcript.text,
+    ocr_status: "skipped",
+    ocr_provider: "未使用",
+    ocr_text: "",
+    transcript: {
+      id: `local-transcript-${Date.now()}`,
+      source_video_id: sourceId,
+      asr_text: transcript.text,
+      ocr_text: "",
+      content_text: transcript.text,
+      timestamps: transcript.timestamps,
+      confidence: 0.75,
+      source: "local_funasr",
+    },
+    correction_status: "completed",
+    corrections: [],
+    unresolved_fragments: [],
+    transcript_quality_score: 75,
+    transcript_quality_message:
+      "文稿由本机 ASR 生成；可在工作台继续审阅与沉淀。",
+    context_terms: [],
+    message: transcript.message,
+    asr_message: "本机 ASR 已完成。",
+    ocr_message: "本次未运行 OCR。",
+    next_step: "云端仅接收文稿，用于结构分析与历史保存。",
+    fallback_inputs: [],
+    media_cleanup_status: "completed",
+    media_cleanup_message:
+      "视频、音频和浏览器会话仅在本机临时处理，未上传服务器。",
   }
-  if (response.parser_error_code === "public_access_unavailable") {
-    return "这条公开链接暂时没有返回视频文件。请确认链接仍公开可访问后重试；系统不会用标题或描述猜内容。"
-  }
-  if (response.parser_error_code === "cookie_required") {
-    return "这条链接需要有效的抖音会话。系统会优先读取本机 Chrome Cookie；请先确认 Chrome 能正常打开该链接后重试。"
-  }
-  if (response.parser_error_code === "transcript_quality") {
-    return (
-      response.video_upload?.transcript_quality_message ||
-      "稿件中仍有无法可靠确认的专名或转写片段，系统已停止后续拆解。"
-    )
-  }
-  return "这条抖音链接暂时没有提取到视频稿件。请确认粘贴的是完整抖音分享文案或 v.douyin.com 短链，然后重试；系统不会用标题或描述猜内容。"
 }
 
 function localConnectorLinkTask(upload: VideoUploadResponse): LinkTaskResponse {
-  const hasTranscript = Boolean(upload.transcript?.content_text.trim())
-  const completed = hasTranscript && upload.correction_status === "completed"
-  const qualityNeedsReview = hasTranscript && !completed
   return {
     source_video: upload.source_video,
-    parser_status: completed ? "completed" : "failed",
-    parser_provider: "本机连接器（BaoCut 兼容）",
+    parser_status: "completed",
+    parser_provider: "本机连接器（yt-dlp + FunASR）",
     output_dir: null,
     downloaded_files: [upload.source_video.title],
     video_upload: upload,
-    parser_error_code: completed
-      ? null
-      : qualityNeedsReview
-        ? "transcript_quality"
-        : "no_media",
-    parser_error_title: completed
-      ? null
-      : qualityNeedsReview
-        ? "稿件校正未通过"
-        : "未识别出视频稿件",
-    parser_error_detail: completed
-      ? null
-      : qualityNeedsReview
-        ? upload.transcript_quality_message
-        : "本机已下载视频，但没有得到足够的可分析稿件。",
-    parser_action_items: completed ? [] : upload.fallback_inputs,
-    message: `本机连接器已下载视频。${upload.message}`,
-    fallback_inputs: upload.fallback_inputs,
+    parser_error_code: null,
+    parser_error_title: null,
+    parser_error_detail: null,
+    parser_action_items: [],
+    message: `本机连接器已完成下载与转写。${upload.message}`,
+    fallback_inputs: [],
   }
 }
 
@@ -118,9 +123,6 @@ export default function App() {
   const [page, setPage] = useState<PageKey>("link")
   const [overview, setOverview] = useState<WorkbenchOverview>(fallbackOverview)
   const [skillPack, setSkillPack] = useState<CodexSkillPackResponse | null>(
-    null,
-  )
-  const [modelStatus, setModelStatus] = useState<ModelRuntimeStatus | null>(
     null,
   )
   const [localSettings, setLocalSettings] =
@@ -134,11 +136,6 @@ export default function App() {
   const [videoUpload, setVideoUpload] = useState<VideoUploadResponse | null>(
     null,
   )
-  const [videoExtractionTask, setVideoExtractionTask] =
-    useState<VideoExtractionTask | null>(null)
-  const [videoExtractionTasks, setVideoExtractionTasks] = useState<
-    VideoExtractionTask[]
-  >([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     null,
   )
@@ -146,11 +143,6 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [presetSaving, setPresetSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [uploadNotice, setUploadNotice] = useState<string | null>(null)
-  const [runAsr, setRunAsr] = useState(true)
-  const [runOcr, setRunOcr] = useState(true)
-  const [extractionLoading, setExtractionLoading] = useState(false)
-  const [warmupLoading, setWarmupLoading] = useState(false)
   const [skillPublishing, setSkillPublishing] = useState(false)
   const [skillPublishResult, setSkillPublishResult] =
     useState<CodexSkillPublishResponse | null>(null)
@@ -158,18 +150,11 @@ export default function App() {
     null,
   )
   const [toast, setToast] = useState<string | null>(null)
-  const [externalGates, setExternalGates] =
-    useState<ExternalGateReport | null>(null)
+  const [externalGates, setExternalGates] = useState<ExternalGateReport | null>(
+    null,
+  )
   const [externalGateLoading, setExternalGateLoading] = useState(false)
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
-
-  const refreshVideoExtractionTasks = useCallback(async () => {
-    try {
-      setVideoExtractionTasks(await fetchVideoExtractionTasks(8))
-    } catch {
-      setVideoExtractionTasks([])
-    }
-  }, [])
 
   const refreshSkillPack = useCallback(async () => {
     try {
@@ -180,10 +165,7 @@ export default function App() {
   }, [])
 
   const refreshExternalGates = useCallback(
-    async (options?: {
-      runLink?: boolean
-      expectModel?: boolean
-    }) => {
+    async (options?: { runLink?: boolean; expectModel?: boolean }) => {
       setExternalGateLoading(true)
       try {
         setExternalGates(await fetchExternalGates(undefined, options))
@@ -216,14 +198,12 @@ export default function App() {
         }
         setOverview(fallbackOverview)
       })
-    fetchModelStatus()
-      .then(setModelStatus)
-      .catch(() => setModelStatus(null))
     void refreshSkillPack()
-    void refreshVideoExtractionTasks()
     void refreshExternalGates()
-    void fetchLocalSettings().then(setLocalSettings).catch(() => setLocalSettings(null))
-  }, [refreshExternalGates, refreshVideoExtractionTasks, refreshSkillPack])
+    void fetchLocalSettings()
+      .then(setLocalSettings)
+      .catch(() => setLocalSettings(null))
+  }, [refreshExternalGates, refreshSkillPack])
 
   useEffect(() => {
     if (!toast) return
@@ -248,8 +228,9 @@ export default function App() {
     }
   }, [analysis, overview])
   const evidenceTarget =
-    mergedOverview.templates.find((template) => template.id === evidenceTargetId) ||
-    null
+    mergedOverview.templates.find(
+      (template) => template.id === evidenceTargetId,
+    ) || null
 
   const handleAnalyzeLink = async () => {
     setError(null)
@@ -259,92 +240,46 @@ export default function App() {
     setVideoUpload(null)
     setLoading(true)
     try {
-      let connectorUnavailable = false
-      let response: LinkTaskResponse
-      try {
-        const upload = await extractAndUploadWithLocalConnector(
-          url,
-          videoUploadUrl(true, { url, contextText: url }),
-          workbenchAuthorizationHeader().Authorization,
-        )
-        response = localConnectorLinkTask(upload)
-      } catch (event) {
-        if (event instanceof LocalConnectorExtractionError) throw event
-        if (!(event instanceof LocalConnectorUnavailableError)) throw event
-        connectorUnavailable = true
-        response = await submitLinkTask(url)
-      }
-      setLinkTask(response)
-      setVideoUpload(response.video_upload || null)
-      const extractedTitle =
-        response.video_upload?.source_video.title ||
-        response.source_video.title ||
-        title
-      const extractedText =
-        response.video_upload?.transcript?.content_text ||
-        [response.video_upload?.asr_text, response.video_upload?.ocr_text]
-          .filter(Boolean)
-          .join("\n")
-      if (
-        response.parser_status !== "completed" ||
-        extractedText.trim().length < 10
-      ) {
-        setText(
-          response.parser_error_code === "transcript_quality"
-            ? extractedText
-            : "",
-        )
-        if (response.parser_error_code === "transcript_quality") {
-          setTitle(extractedTitle)
-        }
-        setUploadNotice(null)
-        const extractionError = linkExtractionErrorMessage(response)
-        setError(
-          connectorUnavailable
-            ? `本机连接器未启动。${extractionError}`
-            : extractionError,
-        )
-        setToast(
-          response.parser_error_code === "transcript_quality"
-            ? "稿件校正未通过，已停止拆解"
-            : response.parser_error_code === "public_access_unavailable"
-              ? "公开链接暂时不可用，已完成自动重试"
-              : response.parser_error_code === "cookie_required"
-                ? "需要有效的抖音会话"
-              : "未识别出真实视频稿件",
-        )
-        return
-      }
+      const localTranscript = await extractAndTranscribeWithLocalConnector(url)
+      const upload = localConnectorVideoUpload(localTranscript)
+      setLinkTask(localConnectorLinkTask(upload))
+      setVideoUpload(upload)
+      const extractedTitle = upload.source_video.title || title
+      const extractedText = localTranscript.text
 
       setTitle(extractedTitle)
       setText(extractedText)
-      setUploadNotice("已从抖音链接真实提取视频稿件，正在拆解写作结构。")
       const analysisResponse = await analyzeText({
         title: extractedTitle,
         content: extractedText,
         input_type: "transcript",
-        url:
-          response.video_upload?.source_video.url ||
-          response.source_video.url ||
-          url,
-        source_video_id: response.video_upload?.source_video.id,
-        author:
-          response.video_upload?.source_video.author ||
-          response.source_video.author,
-        publish_time:
-          response.video_upload?.source_video.publish_time ||
-          response.source_video.publish_time,
-        source_created_at: response.video_upload?.source_video.created_at,
-        asr_text: response.video_upload?.asr_text,
-        ocr_text: response.video_upload?.ocr_text,
-        transcript_source: response.video_upload?.transcript?.source,
-        transcript_confidence: response.video_upload?.transcript?.confidence,
+        url: localTranscript.source_url,
+        asr_text: extractedText,
+        transcript_source: "local_funasr",
+        transcript_confidence: 0.75,
       })
+      const persistedUpload: VideoUploadResponse = {
+        ...upload,
+        source_video: analysisResponse.source_video,
+        transcript: analysisResponse.transcript,
+      }
+      setLinkTask(localConnectorLinkTask(persistedUpload))
+      setVideoUpload(persistedUpload)
       setAnalysis(analysisResponse)
       setSavedSkill(null)
       setToast("已完成拆解，可在当前页确认结果")
     } catch (event) {
-      setError(event instanceof Error ? event.message : "真实提取视频稿件失败")
+      if (
+        event instanceof LocalConnectorUnavailableError ||
+        event instanceof LocalConnectorExtractionError
+      ) {
+        setError(event.message)
+      } else {
+        setError(
+          event instanceof Error ? event.message : "本机提取视频稿件失败",
+        )
+      }
+      setToast("本机媒体处理未完成，云端没有接收视频")
     } finally {
       setLoading(false)
     }
@@ -408,180 +343,6 @@ export default function App() {
       setError(event instanceof Error ? event.message : "确认稿件后拆解失败")
     } finally {
       setLoading(false)
-    }
-  }
-
-  const applyVideoUploadResult = (response: VideoUploadResponse) => {
-    setVideoUpload(response)
-    const mergedText =
-      response.transcript?.content_text ||
-      [response.asr_text, response.ocr_text].filter(Boolean).join("\n")
-    if (mergedText.trim().length >= 10) {
-      setText(mergedText)
-    }
-    setUploadNotice(
-      response.transcript
-        ? "视频文字已提取，可以继续拆解写法。"
-        : "视频已收到。若暂时没有自动文字，请上传字幕、转写文本或直接粘贴口播文案继续。",
-    )
-  }
-
-  const rememberExtractionTask = (task: VideoExtractionTask) => {
-    window.localStorage.setItem(ACTIVE_EXTRACTION_TASK_KEY, task.id)
-  }
-
-  const applyVideoExtractionTask = (task: VideoExtractionTask) => {
-    setVideoExtractionTask(task)
-    setVideoExtractionTasks((current) =>
-      [task, ...current.filter((item) => item.id !== task.id)].slice(0, 8),
-    )
-    if (task.video_upload) {
-      setTitle(task.video_upload.source_video.title)
-      applyVideoUploadResult(task.video_upload)
-    }
-    if (task.status === "cancelled") {
-      setUploadNotice(
-        "自动文字提取已取消，可以上传字幕、转写文本或直接粘贴口播文案继续。",
-      )
-    }
-  }
-
-  const pollVideoExtractionTask = async (initialTask: VideoExtractionTask) => {
-    rememberExtractionTask(initialTask)
-    setExtractionLoading(
-      initialTask.status === "queued" || initialTask.status === "processing",
-    )
-    let current = initialTask
-    for (
-      let index = 0;
-      index < 180 &&
-      (current.status === "queued" || current.status === "processing");
-      index += 1
-    ) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1200))
-      current = await fetchVideoExtractionTask(current.id)
-      applyVideoExtractionTask(current)
-      if (current.cancel_requested) {
-        setToast("取消请求已提交")
-      }
-    }
-    if (current.video_upload) {
-      applyVideoUploadResult(current.video_upload)
-    }
-    if (current.status === "completed") {
-      setToast(
-        current.transcript
-          ? "视频文字已生成"
-          : "暂时没有生成文字，请换一种输入继续",
-      )
-    } else if (current.status === "failed") {
-      setError(current.error || "后台提取失败")
-      setToast("后台提取失败")
-    } else if (current.status === "cancelled") {
-      setToast("后台提取已取消")
-    }
-    void refreshVideoExtractionTasks()
-    setExtractionLoading(false)
-    return current
-  }
-
-  useEffect(() => {
-    const taskId = window.localStorage.getItem(ACTIVE_EXTRACTION_TASK_KEY)
-    if (!taskId) return
-    fetchVideoExtractionTask(taskId)
-      .then((task) => {
-        applyVideoExtractionTask(task)
-        if (task.status === "queued" || task.status === "processing") {
-          void pollVideoExtractionTask(task)
-        }
-      })
-      .catch(() => {
-        window.localStorage.removeItem(ACTIVE_EXTRACTION_TASK_KEY)
-      })
-  }, [pollVideoExtractionTask, applyVideoExtractionTask])
-
-  const handleStartVideoExtraction = async (targetUpload = videoUpload) => {
-    if (!targetUpload) {
-      setError("请先上传视频，再启动自动文字提取。")
-      return
-    }
-    setError(null)
-    setExtractionLoading(true)
-    try {
-      const started = await startVideoExtractionTask(
-        targetUpload.source_video.id,
-        {
-          run_asr: runAsr,
-          run_ocr: runOcr,
-        },
-      )
-      applyVideoExtractionTask(started)
-      setToast("自动文字提取已启动")
-      await pollVideoExtractionTask(started)
-    } catch (event) {
-      setError(event instanceof Error ? event.message : "后台提取启动失败")
-      setToast("后台提取启动失败")
-    } finally {
-      setExtractionLoading(false)
-    }
-  }
-
-  const handleCancelVideoExtraction = async () => {
-    if (!videoExtractionTask) return
-    setError(null)
-    try {
-      const cancelled = await cancelVideoExtractionTask(videoExtractionTask.id)
-      applyVideoExtractionTask(cancelled)
-      void refreshVideoExtractionTasks()
-      setExtractionLoading(
-        cancelled.status === "queued" || cancelled.status === "processing",
-      )
-      setToast(
-        cancelled.status === "cancelled" ? "后台提取已取消" : "取消请求已提交",
-      )
-    } catch (event) {
-      setError(event instanceof Error ? event.message : "取消后台提取失败")
-      setToast("取消后台提取失败")
-    }
-  }
-
-  const handleRetryVideoExtraction = async () => {
-    if (!videoExtractionTask) return
-    setError(null)
-    setExtractionLoading(true)
-    try {
-      const retried = await retryVideoExtractionTask(videoExtractionTask.id)
-      applyVideoExtractionTask(retried)
-      setToast("自动文字提取已重试")
-      await pollVideoExtractionTask(retried)
-    } catch (event) {
-      setError(event instanceof Error ? event.message : "重试后台提取失败")
-      setToast("重试后台提取失败")
-      setExtractionLoading(false)
-    }
-  }
-
-  const handleWarmupCheck = async (execute = false) => {
-    setError(null)
-    setWarmupLoading(true)
-    try {
-      const response = await warmupModels({
-        run_asr: runAsr,
-        run_ocr: runOcr,
-        execute,
-      })
-      setModelStatus({
-        items: response.items,
-        ready_count: response.items.filter((item) => item.available).length,
-        total_count: response.items.length,
-        message: response.message,
-      })
-      setToast(execute ? "模型预热请求已完成" : "模型预热检查完成")
-    } catch (event) {
-      setError(event instanceof Error ? event.message : "模型预热检查失败")
-      setToast("模型预热检查失败")
-    } finally {
-      setWarmupLoading(false)
     }
   }
 
@@ -795,26 +556,6 @@ export default function App() {
           publishing={skillPublishing}
           onPublish={() => void handlePublishSkillPack()}
           localSettings={localSettings}
-        />
-        <MaterialTaskPanel
-          title={title}
-          linkTask={linkTask}
-          videoUpload={videoUpload}
-          videoExtractionTask={videoExtractionTask}
-          videoExtractionTasks={videoExtractionTasks}
-          runAsr={runAsr}
-          runOcr={runOcr}
-          modelStatus={modelStatus}
-          extractionLoading={extractionLoading}
-          warmupLoading={warmupLoading}
-          uploadNotice={uploadNotice}
-          onRunAsrChange={setRunAsr}
-          onRunOcrChange={setRunOcr}
-          onWarmupCheck={() => void handleWarmupCheck(false)}
-          onWarmupExecute={() => void handleWarmupCheck(true)}
-          onStartVideoExtraction={() => void handleStartVideoExtraction()}
-          onCancelVideoExtraction={() => void handleCancelVideoExtraction()}
-          onRetryVideoExtraction={() => void handleRetryVideoExtraction()}
         />
         <ReviewExport
           analysis={analysis}

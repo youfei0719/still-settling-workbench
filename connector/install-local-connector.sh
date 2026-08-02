@@ -6,6 +6,8 @@ launch_agent="$HOME/Library/LaunchAgents/com.youfei.still-settling-connector.pli
 connector_label="com.youfei.still-settling-connector"
 connector_uid=$(id -u)
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+model_python="$project_root/.venv-model/bin/python"
 
 mkdir -p "$connector_root" "$(dirname -- "$launch_agent")"
 install -m 700 "$script_dir/still_settling_connector.py" "$connector_root/still_settling_connector.py"
@@ -22,6 +24,15 @@ cat > "$launch_agent" <<EOF
     <string>/usr/bin/python3</string>
     <string>$connector_root/still_settling_connector.py</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>STILL_SETTLING_PROJECT_ROOT</key>
+    <string>$project_root</string>
+    <key>STILL_SETTLING_MODEL_PYTHON</key>
+    <string>$model_python</string>
+    <key>STILL_SETTLING_FFMPEG</key>
+    <string>/opt/homebrew/bin/ffmpeg</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

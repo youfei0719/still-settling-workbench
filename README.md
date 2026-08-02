@@ -126,14 +126,14 @@ npm run dev --workspace frontend -- --host 127.0.0.1
 
 通过“验证发布”后，才可在“团队 Codex 同步”中手动发布正式 Skill。安装和更新命令会根据该用户实际配置的仓库地址动态生成。
 
-### 3. 抖音会话与媒体能力
+### 3. 本机媒体连接器
 
-默认优先使用本机 Chrome 会话解析公开链接。Cookie 是可选项，只在作品确实需要有效会话时填写。链接提取依赖 `yt-dlp`，也支持配置兼容的 `jiji262/douyin-downloader`；ASR 和 OCR 是独立可选模型，不会阻塞基础工作流。
+生产工作台不下载、上传或保存视频、音频和浏览器 Cookie。安装本机连接器后，`yt-dlp`、FFmpeg 和 FunASR 在访问者电脑的临时目录内完成下载与转写，随后立即清理媒体；云端仅接收文稿和来源元数据，用于文本分析与历史保存。详见 [本机连接器说明](docs/local-connector.md)。
 
 ## 推荐使用方式
 
 1. 在“沉淀写作 Skill”粘贴完整抖音分享文案或短链。
-2. 等待链接识别、媒体提取和真实稿件准备完成；失败时先根据诊断补齐合法来源或本机依赖。
+2. 等待本机连接器完成下载、转写和真实稿件准备；失败时检查本机依赖或更换有权使用的来源。
 3. 审阅结构拆解，确认它表达的是可迁移的写法能力，而不是逐句仿写来源内容。
 4. 在“写作 Skill 库”持续补充同结构的授权来源，运行发布评测并完成主审。
 5. 点击“检查并申请正式并同步 GitHub”，或选择仅本地发布。
@@ -147,8 +147,7 @@ npm run dev --workspace frontend -- --host 127.0.0.1
 | --- | --- |
 | 模型 | `WORKBENCH_LLM_MODE`、`WORKBENCH_LLM_MODEL`、`WORKBENCH_LLM_API_BASE`、`WORKBENCH_LLM_API_KEY` |
 | 数据目录 | `WORKBENCH_DATA_DIR`、`WORKBENCH_DB_MODE` |
-| 视频提取 | `WORKBENCH_DOUYIN_DOWNLOADER_*`、`WORKBENCH_YTDLP_COOKIES_FROM_BROWSER` |
-| ASR/OCR | `WORKBENCH_ASR_MODE`、`WORKBENCH_OCR_MODE`、`WORKBENCH_MODEL_WORKER_PYTHON` |
+| 本机媒体连接器 | `STILL_SETTLING_PROJECT_ROOT`、`STILL_SETTLING_MODEL_PYTHON`、`STILL_SETTLING_YTDLP`、`STILL_SETTLING_FFMPEG` |
 | 发布 | `DOUYIN_WRITING_SKILLS_REPO`、`DOUYIN_WRITING_SKILLS_REMOTE_URL`、`DOUYIN_WRITING_SKILLS_BRANCH` |
 
 优先在界面的“首次配置”完成模型和发布设置。环境变量只适合自动化部署、CI 或需要由管理员统一管理配置的场景。

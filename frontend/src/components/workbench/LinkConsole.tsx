@@ -184,10 +184,10 @@ export function LinkConsole({
   const loadingMessage = isAnalyzing
     ? "正在拆解稿件的开头、推进、情绪和结尾"
     : elapsedSeconds >= 12
-      ? "正在识别视频语音与画面文字，长视频需要多一点时间"
+      ? "正在本机下载视频并识别语音，长视频需要多一点时间"
       : elapsedSeconds >= 4
-        ? "正在提取视频里的真实稿件"
-        : "正在读取分享链接并获取视频内容"
+        ? "正在本机提取视频里的真实稿件"
+        : "正在将链接交给本机媒体连接器"
 
   useEffect(() => {
     if (qualityNeedsReview && transcriptText) {
@@ -201,7 +201,7 @@ export function LinkConsole({
       <Card className="input-panel">
         <SectionHeader
           title="沉淀写作 Skill"
-          description="粘贴完整的抖音分享文案或短链即可开始。系统会先尝试免登录提取；取得真实视频稿件后，才会拆解写法并生成 Skill 草稿。"
+          description="粘贴完整的抖音分享文案或短链即可开始。本机连接器会下载并转写，云端只接收文稿用于分析、历史和 Skill 沉淀。"
         />
 
         {evidenceTarget ? (
@@ -209,7 +209,8 @@ export function LinkConsole({
             <div>
               <span>正在补充来源</span>
               <strong>
-                「{evidenceTarget.name}」当前 {evidenceTarget.source_count || 0}/3
+                「{evidenceTarget.name}」当前 {evidenceTarget.source_count || 0}
+                /3
               </strong>
             </div>
             <span>提取并保存后，本视频会自动预选为它的下一条来源。</span>
@@ -238,7 +239,7 @@ export function LinkConsole({
             ) : (
               <Link2 size={16} />
             )}
-            {loading ? "真实提取中..." : "真实提取视频稿件"}
+            {loading ? "本机转写中..." : "本机提取并转写"}
           </button>
         </div>
 
@@ -265,7 +266,7 @@ export function LinkConsole({
         {error ? (
           <div className="alert-box alert-error">
             <strong>
-              {qualityNeedsReview ? "稿件校正未通过" : "未识别出视频稿件"}
+              {qualityNeedsReview ? "稿件校正未通过" : "本机转写未完成"}
             </strong>
             <span>{error}</span>
           </div>
@@ -345,7 +346,7 @@ export function LinkConsole({
                     ? "没有取得可分析的视频内容"
                     : linkTask
                       ? "已确认视频内容，可以继续提取稿件"
-                      : "提交后将在这里显示结果"}
+                      : "本机连接器处理后将在这里显示结果"}
                 </dd>
               </div>
             </dl>
@@ -395,7 +396,7 @@ export function LinkConsole({
               <p className="progress-empty-detail">
                 {isExtracting
                   ? loadingMessage
-                  : "真实稿件提取完成后，可在这里按语义段落阅读全文。"}
+                  : "本机转写完成后，可在这里按语义段落阅读全文。"}
               </p>
             )}
             {videoUpload?.transcript_quality_message ? (

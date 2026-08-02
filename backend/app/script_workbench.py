@@ -2191,79 +2191,26 @@ def human_review_gate(
 
 
 def external_link_gate(link: Optional[str] = None, run_link: bool = False) -> dict:
-    ytdlp_ready = is_ytdlp_configured()
-    douyin_downloader_ready = is_douyin_downloader_configured()
-    downloader_ready = ytdlp_ready or douyin_downloader_ready
     normalized_link = normalize_douyin_url_input(link or "") if link else ""
-    ready_to_test = downloader_ready and bool(normalized_link)
     result: dict = {
-        "passed": False,
-        "status": "not_run",
-        "downloader_configured": downloader_ready,
-        "yt_dlp_configured": ytdlp_ready,
-        "douyin_downloader_configured": douyin_downloader_ready,
-        "resolver_chain": [
-            name
-            for name, ready in [
-                ("yt-dlp", ytdlp_ready),
-                ("douyin-downloader", douyin_downloader_ready),
-            ]
-            if ready
-        ],
-        "downloader_mode": douyin_downloader_mode(),
-        "cookie_configured": has_douyin_cookie_config(),
+        "passed": bool(normalized_link),
+        "status": "local_connector_required",
+        "downloader_configured": False,
+        "yt_dlp_configured": False,
+        "douyin_downloader_configured": False,
+        "resolver_chain": ["local-connector"],
+        "downloader_mode": "local_connector",
+        "cookie_configured": False,
         "input_link": link or "",
         "normalized_link": normalized_link,
-        "ready_to_test": ready_to_test,
+        "ready_to_test": bool(normalized_link),
         "action_items": [],
     }
-    if not downloader_ready:
-        result["action_items"].append(
-            "安装 yt-dlp，或配置 WORKBENCH_DOUYIN_DOWNLOADER_DIR / WORKBENCH_DOUYIN_DOWNLOADER_CMD。"
-        )
     if not normalized_link:
         result["action_items"].append("粘贴完整抖音分享文案或 v.douyin.com 短链。")
-    if not run_link:
-        result["status"] = "ready" if ready_to_test else "missing_external_input"
-        result["passed"] = ready_to_test
+    else:
         result["action_items"].append(
-            "准备好链接后会自动使用本机浏览器会话提取；个别作品仍可能要求有效的抖音 Cookie。"
-        )
-        return result
-
-    if not ready_to_test:
-        result["status"] = "missing_external_input"
-        return result
-
-    response = create_link_task(LinkTaskRequest(url=normalized_link))
-    fallback_ready = bool(response.fallback_inputs)
-    link_usable = (
-        response.parser_status == "completed" and response.video_upload is not None
-    )
-    result.update(
-        {
-            "status": response.parser_status,
-            "passed": link_usable,
-            "parser_error_code": response.parser_error_code,
-            "parser_error_title": response.parser_error_title,
-            "parser_error_detail": response.parser_error_detail,
-            "downloaded_file_count": len(response.downloaded_files),
-            "has_video_upload": response.video_upload is not None,
-            "fallback_ready": fallback_ready,
-            "fallback_inputs": response.fallback_inputs,
-            "message": response.message,
-        }
-    )
-    if not result["passed"]:
-        result["action_items"].extend(
-            response.parser_action_items or ["确认分享文案里包含完整短链后重试。"]
-        )
-    elif response.parser_status != "completed":
-        result["action_items"].extend(
-            [
-                "公开视频下载未成功。",
-                "当前不会用标题或描述伪造稿件。",
-            ]
+            "链接下载与转写仅在访问者电脑上的本机连接器执行；服务器不会运行下载测试。"
         )
     return result
 
