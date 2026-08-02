@@ -72,10 +72,16 @@ def extract_douyin_url(value: str) -> str:
 
 def ytdlp_binary() -> str:
     configured = os.getenv("STILL_SETTLING_YTDLP", "").strip()
-    executable = configured or shutil.which("yt-dlp")
-    if not executable:
-        raise ConnectorError("未找到 yt-dlp。请先安装 BaoCut 所使用的 yt-dlp。")
-    return executable
+    candidates = [
+        configured,
+        shutil.which("yt-dlp") or "",
+        "/opt/homebrew/bin/yt-dlp",
+        "/usr/local/bin/yt-dlp",
+    ]
+    for executable in candidates:
+        if executable and Path(executable).is_file() and os.access(executable, os.X_OK):
+            return executable
+    raise ConnectorError("未找到 yt-dlp。请先安装 BaoCut 所使用的 yt-dlp。")
 
 
 def downloaded_media_path(output_dir: Path) -> Path | None:
