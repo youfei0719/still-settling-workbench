@@ -52,6 +52,34 @@ def test_downloader_prefers_chrome_session_and_baocut_compatible_mp4_format(
     assert media == tmp_path / "source.mp4"
     assert commands[0][commands[0].index("--cookies-from-browser") + 1] == "chrome"
     assert commands[0][commands[0].index("--format") + 1] == connector.PREFERRED_MP4_FORMAT
+    assert commands[0][commands[0].index("--socket-timeout") + 1] == str(
+        connector.DOWNLOAD_SOCKET_TIMEOUT_SECONDS
+    )
+
+
+def test_downloader_tries_browser_visitor_session_before_anonymous_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    attempts: list[tuple[str | None, str | None]] = []
+    media = tmp_path / "source.mp4"
+    media.write_bytes(b"video")
+
+    monkeypatch.setattr(connector, "system_http_proxy", lambda: "http://127.0.0.1:7897")
+
+    def fake_attempt(
+        _url: str, _output_dir: Path, browser: str | None, proxy: str | None = None
+    ) -> Path | None:
+        attempts.append((browser, proxy))
+        return media if browser == "chrome" else None
+
+    monkeypatch.setattr(connector, "download_attempt", fake_attempt)
+
+    result, temporary_directory = connector.download_media("https://v.douyin.com/example/")
+    try:
+        assert result == media
+        assert attempts == [("chrome", "http://127.0.0.1:7897")]
+    finally:
+        temporary_directory.cleanup()
 
 
 def test_parses_enabled_macos_system_proxy() -> None:

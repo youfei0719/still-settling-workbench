@@ -37,8 +37,6 @@ DEFAULT_ORIGINS: Final = {
 SUPPORTED_EXTENSIONS: Final = {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 BROWSER_RETRY_ORDER: Final = (
     "chrome",
-    "chrome",
-    "chrome",
     "safari",
     "firefox",
     "brave",
@@ -47,6 +45,8 @@ BROWSER_RETRY_ORDER: Final = (
     "opera",
     "vivaldi",
 )
+DOWNLOAD_TIMEOUT_SECONDS: Final = 180
+DOWNLOAD_SOCKET_TIMEOUT_SECONDS: Final = 25
 PREFERRED_MP4_FORMAT: Final = (
     "bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/"
     "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
@@ -143,6 +143,8 @@ def download_attempt(
         "2",
         "--retry-sleep",
         "http:linear=1:2",
+        "--socket-timeout",
+        str(DOWNLOAD_SOCKET_TIMEOUT_SECONDS),
         "--format",
         PREFERRED_MP4_FORMAT,
         "--merge-output-format",
@@ -161,7 +163,7 @@ def download_attempt(
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=300,
+            timeout=DOWNLOAD_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         raise ConnectorError("本机下载超时，请稍后重试。") from exc
@@ -172,8 +174,10 @@ def download_media(url: str) -> tuple[Path, tempfile.TemporaryDirectory[str]]:
     temporary_directory = tempfile.TemporaryDirectory(prefix="still-settling-")
     output_dir = Path(temporary_directory.name)
     try:
-        # Douyin can require a fresh anonymous visitor session.  Read it from the
-        # default browser first, as BaoCut does; no cookie is copied or sent away.
+        # Douyin currently requires a fresh visitor session even for public
+        # videos. This is not a login: yt-dlp reads Chrome's local, anonymous
+        # visitor cookie jar and never exports it. It is also BaoCut's documented
+        # recovery for bot checks. The pure anonymous attempt remains a fallback.
         media = None
         proxy = system_http_proxy()
         for browser in BROWSER_RETRY_ORDER:
