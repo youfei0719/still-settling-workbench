@@ -172,9 +172,9 @@ def verify_link_error_classification() -> dict[str, Any]:
         "Cookies may be invalid or incomplete; Empty 200 response for /aweme/v1/web/aweme/detail/ (anti-bot)"
     )
     checks = {
-        "anti_bot_is_transient_public_access": error_code == "public_access_unavailable",
-        "title_is_clear": title == "公开链接暂时不可用",
-        "does_not_require_login": any("不需要登录" in item for item in actions),
+        "anti_bot_requires_session": error_code == "cookie_required",
+        "title_is_clear": title == "需要有效 Cookie 或登录态",
+        "offers_session_recovery": any("Chrome" in item or "Cookie" in item for item in actions),
     }
     return {"passed": all(checks.values()), "checks": checks}
 

@@ -15,6 +15,7 @@ frontend/.env.*
 undefined/
 evals/workbench/*.json
 evals/workbench/*.md
+!evals/workbench/acceptance_samples.json
 evals/product-audit/
 backend/.pytest_cache/
 backend/.ruff_cache/
