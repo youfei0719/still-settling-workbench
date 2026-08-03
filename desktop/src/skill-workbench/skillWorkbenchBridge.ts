@@ -11,9 +11,9 @@ import type {
   PublishProgress,
   ProviderModels,
   PublishResult,
-  ReleasePack,
   RepositorySetupRequest,
   RuntimeHealth,
+  StableRepositorySnapshot,
   SettingsUpdate,
   SourceRecord,
   StructureDraft,
@@ -178,17 +178,24 @@ export const skillWorkbenchBridge = {
         protocolVersion: "native-v1",
       },
       credentialStore: "unavailable",
+      stableSnapshot: null,
+      stableSnapshotError: "浏览器只读预览，未运行 Tauri 仓库校验",
       checkedAt: new Date().toISOString(),
     }
   },
 
-  async exportReleaseCandidate(candidate: LocalCandidate, pack: ReleasePack): Promise<string> {
-    if (isNativeDesktop()) {
-      return invoke<string>("export_release_candidate", { candidate, pack })
+  async loadStableRepositorySnapshot(): Promise<StableRepositorySnapshot> {
+    if (isNativeDesktop()) return invoke<StableRepositorySnapshot>("load_stable_repository_snapshot")
+    return {
+      configured: false, verified: false, hasStable: false, version: null, updatedAt: null,
+      packagePath: null, manifestPath: null, repositoryPath: null, remoteUrl: null, branch: null,
+      skills: [], runtimeFiles: {}, error: "浏览器只读预览，未连接真实仓库", preview: true,
     }
-    void candidate
-    void pack
-    throw new Error("发布只在 Mac / Windows 桌面端可用")
+  },
+
+  async latestPublishJob(candidateId: string): Promise<PublishResult | null> {
+    if (!isNativeDesktop()) return null
+    return invoke<PublishResult | null>("latest_publish_job", { candidateId })
   },
 
   async processMedia(mode: "douyin_link" | "local_media", input: string): Promise<MediaExtractionResult> {
@@ -241,9 +248,9 @@ export const skillWorkbenchBridge = {
     return invoke("setup_skill_repository", { request })
   },
 
-  async publishReleaseCandidate(candidate: LocalCandidate, pack: ReleasePack): Promise<PublishResult> {
+  async publishReleaseCandidate(candidateId: string): Promise<PublishResult> {
     if (!isNativeDesktop()) throw new Error("stable 发布只在 Mac / Windows 桌面端可用")
-    return invoke<PublishResult>("publish_release_candidate", { candidate, pack })
+    return invoke<PublishResult>("publish_release_candidate", { candidateId })
   },
 
   async onMediaProgress(handler: (progress: MediaProgress) => void): Promise<() => void> {

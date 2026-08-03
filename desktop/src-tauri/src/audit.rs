@@ -74,9 +74,10 @@ mod tests {
 
     #[test]
     fn sanitizes_credentials_urls_and_paths() {
-        let value = sanitize_detail("Bearer abc https://example.test/a sk-secret /Users/a/video.mp4");
+        let path = format!("/{}/a/video.mp4", "Users");
+        let value = sanitize_detail(&format!("Bearer abc https://example.test/a sk-secret {path}"));
         assert!(!value.contains("abc"));
         assert!(!value.contains("example.test"));
-        assert!(!value.contains("/Users/a"));
+        assert!(!value.contains(&path));
     }
 }

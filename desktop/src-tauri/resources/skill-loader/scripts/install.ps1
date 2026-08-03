@@ -1,6 +1,20 @@
 $ErrorActionPreference = "Stop"
-$RepoUrl = "https://github.com/youfei0719/douyin-writing-skills.git"
-$TargetDir = Join-Path $HOME ".agents\skills\douyin-writing-skills"
+param(
+  [string]$RepositoryUrl = $env:DOUYIN_WRITING_SKILLS_REPO_URL,
+  [string]$TargetDir = $env:DOUYIN_WRITING_SKILLS_TARGET_DIR
+)
+
+$SourceDir = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+if ([string]::IsNullOrWhiteSpace($RepositoryUrl) -and (git -C $SourceDir rev-parse --is-inside-work-tree 2>$null) -eq "true") {
+  $RepositoryUrl = git -C $SourceDir remote get-url origin
+}
+if ([string]::IsNullOrWhiteSpace($RepositoryUrl)) {
+  throw "请传入目标 Skill 仓库地址，或设置 DOUYIN_WRITING_SKILLS_REPO_URL。"
+}
+if ([string]::IsNullOrWhiteSpace($TargetDir)) {
+  $RepositoryName = [System.IO.Path]::GetFileNameWithoutExtension($RepositoryUrl.TrimEnd('/'))
+  $TargetDir = Join-Path $HOME ".agents\skills\$RepositoryName"
+}
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   throw "需要先安装 Git。"
@@ -12,10 +26,11 @@ if (-not (Test-Path $TargetDir)) {
 } else {
   $isRepo = git -C $TargetDir rev-parse --is-inside-work-tree 2>$null
   $origin = git -C $TargetDir remote get-url origin 2>$null
-  if ($isRepo -ne "true" -or $origin -notmatch "github\.com[:/]youfei0719/douyin-writing-skills(\.git)?$") {
-    throw "目标目录已存在，但不是 douyin-writing-skills Git 仓库：$TargetDir"
+  if ($isRepo -ne "true" -or $origin -ne $RepositoryUrl) {
+    throw "目标目录已存在，但 remote 与目标 Skill 仓库不一致：$TargetDir"
   }
-  git -C $TargetDir pull --ff-only origin main
+  $branch = git -C $TargetDir branch --show-current
+  git -C $TargetDir pull --ff-only origin $branch
 }
 
 if (Get-Command python3 -ErrorAction SilentlyContinue) {

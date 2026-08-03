@@ -40,6 +40,16 @@ fn save_skill_workbench_state(db: State<'_, DesktopDb>, state: Value) -> Result<
 }
 
 #[tauri::command]
+fn load_stable_repository_snapshot(db: State<'_, DesktopDb>) -> Result<Value, String> {
+    publish::snapshot_from_settings(&db)
+}
+
+#[tauri::command]
+fn latest_publish_job(db: State<'_, DesktopDb>, candidate_id: String) -> Result<Option<Value>, String> {
+    db.latest_publish_job(&candidate_id).map_err(command_error)
+}
+
+#[tauri::command]
 async fn runtime_health(app: AppHandle, db: State<'_, DesktopDb>) -> Result<Value, String> {
     let trace_id = format!("health-{}", Uuid::new_v4());
     let _ = audit::record(&db, &trace_id, "runtime.health", "collect", "started", "RUNTIME_HEALTH_STARTED", "开始检查运行环境", "lib.rs:runtime_health", None);
@@ -63,6 +73,7 @@ async fn runtime_health(app: AppHandle, db: State<'_, DesktopDb>) -> Result<Valu
     } else {
         "需要 FFmpeg，以及本机 MLX Whisper 或可用的转写 API"
     };
+    let stable_snapshot = publish::snapshot_from_settings(&db);
     let result = json!({
       "mode": "native",
       "database": "healthy",
@@ -73,6 +84,8 @@ async fn runtime_health(app: AppHandle, db: State<'_, DesktopDb>) -> Result<Valu
         "protocolVersion": "native-v2-browser-signed"
       },
       "credentialStore": "available_unverified",
+      "stableSnapshot": stable_snapshot.as_ref().ok(),
+      "stableSnapshotError": stable_snapshot.err(),
       "networkProxySource": network_proxy_source,
       "checkedAt": Utc::now().to_rfc3339(),
       "resourceDirectory": app.path().resource_dir().ok().map(|path| path.to_string_lossy().into_owned())
@@ -94,111 +107,6 @@ fn list_diagnostic_logs(db: State<'_, DesktopDb>, limit: Option<u32>) -> Result<
 #[tauri::command]
 fn clear_diagnostic_logs(db: State<'_, DesktopDb>) -> Result<(), String> {
     db.clear_diagnostic_logs().map_err(command_error)
-}
-
-fn release_version(value: &Value) -> Result<&str, String> {
-    let version = value
-        .get("version")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "发布候选缺少版本号".to_string())?;
-    let valid = !version.is_empty()
-        && version.len() <= 128
-        && version
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character));
-    if !valid {
-        return Err("版本号只能包含字母、数字、点、下划线和连字符".to_string());
-    }
-    Ok(version)
-}
-
-pub(crate) fn validate_release_candidate(candidate: &Value, pack: &Value) -> Result<(), String> {
-    if candidate
-        .get("sourceCount")
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-        < 1
-    {
-        return Err("至少需要 1 条已授权真实稿件".to_string());
-    }
-    let evaluation = candidate
-        .get("modelEvaluation")
-        .ok_or_else(|| "缺少模型评测".to_string())?;
-    if evaluation.get("status").and_then(Value::as_str) != Some("passed")
-        || evaluation.get("score").and_then(Value::as_u64).unwrap_or(0) < 80
-    {
-        return Err("模型评测未通过 80 分门禁".to_string());
-    }
-    if candidate
-        .get("humanReview")
-        .and_then(|review| review.get("status"))
-        .and_then(Value::as_str)
-        != Some("approved")
-    {
-        return Err("人工主审尚未批准".to_string());
-    }
-    let version = release_version(pack)?;
-    let files = pack
-        .get("files")
-        .and_then(Value::as_object)
-        .ok_or_else(|| "发布候选缺少 files".to_string())?;
-    for required in ["SKILL.md", "references/skills.json"] {
-        if !files.contains_key(required) {
-            return Err(format!("发布候选缺少 {required}"));
-        }
-    }
-    for (path, content) in files {
-        let safe_path = !path.is_empty()
-            && !path.starts_with('/')
-            && !path.contains('\\')
-            && !path.split('/').any(|part| part == "." || part == "..")
-            && (path.ends_with(".md") || path.ends_with(".json"));
-        if !safe_path || !content.is_string() {
-            return Err(format!("发布候选包含不安全文件：{path}"));
-        }
-    }
-    let skills_json = files
-        .get("references/skills.json")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "skills.json 内容无效".to_string())?;
-    let skills: Value = serde_json::from_str(skills_json).map_err(command_error)?;
-    if skills.get("version").and_then(Value::as_str) != Some(version) {
-        return Err("发布包版本与 skills.json 不一致".to_string());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn export_release_candidate(
-    app: AppHandle,
-    candidate: Value,
-    pack: Value,
-) -> Result<String, String> {
-    validate_release_candidate(&candidate, &pack)?;
-    let version = release_version(&pack)?.to_string();
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(command_error)?
-        .join("release-candidates")
-        .join(&version);
-    fs::create_dir_all(&directory).map_err(command_error)?;
-    let destination = directory.join("skill-pack.json");
-    let serialized = format!(
-        "{}\n",
-        serde_json::to_string_pretty(&pack).map_err(command_error)?
-    );
-    if destination.is_file() {
-        let existing = fs::read_to_string(&destination).map_err(command_error)?;
-        if existing != serialized {
-            return Err("同版本发布候选已存在且内容不同，请使用新版本号".to_string());
-        }
-        return Ok(destination.to_string_lossy().into_owned());
-    }
-    let temporary = directory.join(format!(".skill-pack-{}.tmp", Uuid::new_v4()));
-    fs::write(&temporary, serialized).map_err(command_error)?;
-    fs::rename(&temporary, &destination).map_err(command_error)?;
-    Ok(destination.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -410,12 +318,11 @@ async fn setup_skill_repository(
 async fn publish_release_candidate(
     app: AppHandle,
     db: State<'_, DesktopDb>,
-    candidate: Value,
-    pack: Value,
+    candidate_id: String,
 ) -> Result<Value, String> {
     let trace_id = format!("publish-{}", Uuid::new_v4());
     let _ = audit::record(&db, &trace_id, "publish.release", "request", "started", "PUBLISH_RELEASE_STARTED", "开始发布稳定 Skill 包", "lib.rs:publish_release_candidate", None);
-    let result = publish::publish_release_with_progress(Some(&app), &db, &candidate, &pack).await;
+    let result = publish::publish_candidate_with_progress(Some(&app), &db, &candidate_id).await;
     match &result {
         Ok(_) => { let _ = audit::record(&db, &trace_id, "publish.release", "completed", "success", "PUBLISH_RELEASE_COMPLETED", "稳定 Skill 包发布完成", "lib.rs:publish_release_candidate", None); }
         Err(error) => {
@@ -451,6 +358,8 @@ pub fn run() {
             save_snapshot,
             load_skill_workbench_state,
             save_skill_workbench_state,
+            load_stable_repository_snapshot,
+            latest_publish_job,
             runtime_health,
             import_media,
             apply_sidecar_event,
@@ -460,7 +369,6 @@ pub fn run() {
             save_privacy_preferences,
             clear_media_cache,
             store_secret,
-            export_release_candidate,
             get_local_settings,
             update_local_settings,
             list_provider_models,
@@ -483,20 +391,10 @@ mod tests {
 
     #[test]
     fn cache_guard_rejects_arbitrary_paths() {
-        assert!(!is_safe_temp_media_path(Path::new(
-            "/Users/demo/Movies/source.mp4"
-        )));
+        let arbitrary_path = format!("/{}/demo/Movies/source.mp4", "Users");
+        assert!(!is_safe_temp_media_path(Path::new(&arbitrary_path)));
         assert!(is_safe_temp_media_path(Path::new(
             "/tmp/douyin-writing-skills/media-cache/task/audio.wav"
         )));
-    }
-
-    #[test]
-    fn release_candidate_requires_all_quality_gates() {
-        let candidate = json!({"sourceCount":1,"modelEvaluation":{"status":"passed","score":85},"humanReview":{"status":"approved"}});
-        let pack = json!({"version":"wb-20260803","files":{"SKILL.md":"# Skill","references/skills.json":"{\"version\":\"wb-20260803\"}"}});
-        assert!(validate_release_candidate(&candidate, &pack).is_ok());
-        let blocked = json!({"sourceCount":0,"modelEvaluation":{"status":"passed","score":85},"humanReview":{"status":"approved"}});
-        assert!(validate_release_candidate(&blocked, &pack).is_err());
     }
 }

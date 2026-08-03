@@ -9,8 +9,7 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { useMemo, useState } from "react"
-import repositorySkillData from "virtual:douyin-skill-repository"
-import type { LocalCandidate, PublishProgress } from "./types"
+import type { LocalCandidate, PublishProgress, PublishResult, StableRepositorySnapshot } from "./types"
 import { candidateGates } from "./workflow"
 
 const statusCopy = {
@@ -28,6 +27,7 @@ function CandidateWorkspace({
   remediating,
   publishing,
   publishProgress,
+  publishJob,
 }: {
   candidate: LocalCandidate
   onPublishConfirmed: (candidateId: string) => void
@@ -36,6 +36,7 @@ function CandidateWorkspace({
   remediating: boolean
   publishing: boolean
   publishProgress: PublishProgress | null
+  publishJob: PublishResult | null | undefined
 }) {
   const [publishConfirmed, setPublishConfirmed] = useState(false)
   const gates = candidateGates(candidate)
@@ -79,6 +80,7 @@ function CandidateWorkspace({
         {gates.human ? <section className="release-form">
           <header><FileOutput size={16} /><div><h4>{candidate.release ? "stable Skill 已发布" : "发布同步待完成"}</h4><p>{candidate.release ? "不可变版本已写入 stable 清单。" : "上次发布已创建本地提交，但远端同步尚未完成。"}</p></div></header>
           {candidate.release ? <div className="release-result"><CheckCircle2 size={15} /><div><strong>{candidate.release.version}</strong><code>{candidate.release.path}</code></div></div> : <><button type="button" className="primary-command" disabled={publishing} onClick={() => onRetryExport(candidate.id)}><FileOutput size={14} />{publishing ? "正在同步..." : "重试同步 stable Skill"}</button>{publishing && publishProgress ? <PublishProgressRail progress={publishProgress} /> : null}</>}
+          {publishJob ? <div className="release-result"><FileOutput size={15} /><div><strong>{publishJob.version} · {publishJob.stage}</strong><code>{publishJob.commitSha ?? "尚未生成本地提交"}</code>{publishJob.commitUrl ? <a href={publishJob.commitUrl} target="_blank" rel="noreferrer">查看 GitHub commit</a> : null}<small>{publishJob.remoteVerifiedAt ? `远端已验证：${new Date(publishJob.remoteVerifiedAt).toLocaleString("zh-CN")}` : publishJob.errorMessage ?? "发布任务已保存在 SQLite，可重试同一版本。"}</small></div></div> : null}
         </section> : null}
       </div>
     </details>
@@ -86,21 +88,25 @@ function CandidateWorkspace({
 }
 
 const publishStages: Array<{ id: PublishProgress["stage"]; label: string }> = [
-  { id: "package", label: "生成发布包" },
-  { id: "commit", label: "提交本地仓库" },
-  { id: "fetch", label: "同步远端" },
-  { id: "rebase", label: "整合更新" },
-  { id: "push", label: "推送 GitHub" },
+  { id: "fetching", label: "同步仓库" },
+  { id: "loading_base", label: "校验 stable" },
+  { id: "building", label: "合并运行时" },
+  { id: "validating", label: "校验发布包" },
+  { id: "committing", label: "提交本地仓库" },
+  { id: "pushing", label: "推送 GitHub" },
+  { id: "verifying", label: "验证远端" },
 ]
 
 function PublishProgressRail({ progress }: { progress: PublishProgress }) {
   const active = publishStages.findIndex((stage) => stage.id === progress.stage)
-  const completed = progress.stage === "completed"
+  const completed = progress.stage === "succeeded"
   return <div className="publish-progress" role="status" aria-live="polite"><div className="publish-progress-stages">{publishStages.map((stage, index) => <div key={stage.id} className={completed || index < active ? "is-complete" : index === active ? "is-active" : ""}><span>{completed || index < active ? <Check size={12} /> : index + 1}</span><small>{stage.label}</small></div>)}</div><p>{progress.message}</p></div>
 }
 
 export function LibraryPage({
   candidates,
+  stableSnapshot,
+  publishJobs,
   notice,
   onPublishConfirmed,
   onRetryExport,
@@ -110,6 +116,8 @@ export function LibraryPage({
   publishProgress,
 }: {
   candidates: LocalCandidate[]
+  stableSnapshot: StableRepositorySnapshot | null
+  publishJobs: Record<string, PublishResult | null>
   notice: string | null
   onPublishConfirmed: (candidateId: string) => void
   onRetryExport: (candidateId: string) => void
@@ -120,26 +128,33 @@ export function LibraryPage({
 }) {
   const [search, setSearch] = useState("")
   const [scope, setScope] = useState<"all" | "stable" | "candidate">("all")
-  const stable = useMemo(() => repositorySkillData.skills.filter((skill) => !search || `${skill.name} ${skill.choose_when} ${skill.solves_problems.join(" ")}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())), [search])
+  const stable = useMemo(() => (stableSnapshot?.skills ?? []).filter((skill) => {
+    const text = JSON.stringify(skill).toLocaleLowerCase()
+    return !search || text.includes(search.toLocaleLowerCase())
+  }), [search, stableSnapshot])
   const local = useMemo(() => candidates.filter((skill) => !search || `${skill.name} ${skill.purpose}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())), [candidates, search])
 
   return (
     <section className="library-page">
-      <header className="page-title"><div><h1>写作 Skill 库</h1><p>候选自动完成结构评测；只有最终发布需要人工确认，stable 仍来自仓库不可变包。</p></div><div className="stable-version"><CheckCircle2 size={15} /><span>文件完整性</span><strong>{repositorySkillData.version}</strong></div></header>
+      <header className="page-title"><div><h1>写作 Skill 库</h1><p>候选自动完成结构评测；stable 仅显示 Tauri 已校验的目标仓库快照。</p></div><div className="stable-version"><CheckCircle2 size={15} /><span>{stableSnapshot?.verified ? "文件完整性" : "stable 状态"}</span><strong>{stableSnapshot?.version ?? "未连接"}</strong></div></header>
       {notice ? <div className="inline-notice" role="status"><AlertCircle size={15} />{notice}</div> : null}
+      {!stableSnapshot?.verified ? <div className="inline-notice" role="status"><AlertCircle size={15} />{stableSnapshot?.error ?? "正在读取真实 stable repository snapshot"}</div> : null}
       <div className="library-toolbar"><label><Search size={15} /><input aria-label="搜索写作 Skill" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称、适用条件或解决问题" /></label><div className="segmented">{[["all", "全部"], ["stable", "稳定版本"], ["candidate", "本机候选"]].map(([value, label]) => <button key={value} type="button" className={scope === value ? "is-active" : ""} onClick={() => setScope(value as typeof scope)}>{label}</button>)}</div></div>
-      <div className="library-summary"><div><BookOpen size={16} /><span>稳定能力</span><strong>{repositorySkillData.skills.length}</strong></div><div><FileText size={16} /><span>本机 Skill</span><strong>{candidates.length}</strong></div><p><ShieldCheck size={14} />单条授权真实稿件即可沉淀一个本机 Skill；评测通过后只需一次最终发布确认。</p></div>
+      <div className="library-summary"><div><BookOpen size={16} /><span>稳定能力</span><strong>{stable.length}</strong></div><div><FileText size={16} /><span>本机 Skill</span><strong>{candidates.length}</strong></div><p><ShieldCheck size={14} />{stableSnapshot?.repositoryPath ? `${stableSnapshot.remoteUrl || stableSnapshot.repositoryPath} · ${stableSnapshot.branch || "local"}` : "浏览器只读预览不伪造 stable 数据"}</p></div>
 
       {(scope === "all" || scope === "candidate") ? (
         <section className="skill-section"><header><div><h2>本机 Skill</h2><p>每条经确认稿件会自动建立、自动评测；通过后可直接确认发布 stable。</p></div><span>{local.length}</span></header>
-          {local.length ? <div className="skill-asset-list">{local.map((candidate) => <CandidateWorkspace key={candidate.id} candidate={candidate} onPublishConfirmed={onPublishConfirmed} onRetryExport={onRetryExport} evaluating={evaluatingCandidateId === candidate.id} remediating={remediatingCandidateId === candidate.id} publishing={publishingCandidateId === candidate.id} publishProgress={publishingCandidateId === candidate.id ? publishProgress : null} />)}</div> : <div className="library-empty"><FileText size={22} /><strong>没有匹配的本机 Skill</strong></div>}
+          {local.length ? <div className="skill-asset-list">{local.map((candidate) => <CandidateWorkspace key={candidate.id} candidate={candidate} onPublishConfirmed={onPublishConfirmed} onRetryExport={onRetryExport} evaluating={evaluatingCandidateId === candidate.id} remediating={remediatingCandidateId === candidate.id} publishing={publishingCandidateId === candidate.id} publishProgress={publishingCandidateId === candidate.id ? publishProgress : null} publishJob={publishJobs[candidate.id]} />)}</div> : <div className="library-empty"><FileText size={22} /><strong>没有匹配的本机 Skill</strong></div>}
         </section>
       ) : null}
 
       {(scope === "all" || scope === "stable") ? (
-        <section className="skill-section"><header><div><h2>稳定版本</h2><p>文件哈希已校验；每一条稳定能力都有独立的质量记录。</p></div><span>{stable.length}</span></header><div className="skill-asset-list">{stable.map((skill) => (
-          <details key={skill.id} className="skill-asset stable"><summary><div className="asset-status"><CheckCircle2 size={15} /><span>stable</span></div><div><h3>{skill.name}</h3><p>{skill.choose_when}</p><small>{skill.account_type} · 质量分 {skill.quality_score} · {skill.source_count} 条沉淀来源</small></div><div className="asset-tags">{skill.hotspot_types.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div><time>{new Date(repositorySkillData.updatedAt).toLocaleDateString("zh-CN")}</time></summary><div className="asset-detail"><section><span>适用边界</span><p>{skill.applicable_scenes.slice(0, 3).join("；")}</p></section><section><span>写作方法</span><p>{skill.writing_method}</p></section><section><span>风险边界</span><p>{skill.risk_boundary}</p></section><code>{skill.reference_file}</code></div></details>
-        ))}</div></section>
+        <section className="skill-section"><header><div><h2>稳定版本</h2><p>{stableSnapshot?.verified ? `已校验 ${stableSnapshot.packagePath} 的路径、大小和 SHA-256。` : "仅在原生运行时展示真实 stable 内容。"}</p></div><span>{stable.length}</span></header>{stable.length ? <div className="skill-asset-list">{stable.map((skill) => {
+          const data = skill as Record<string, unknown>
+          const name = typeof data.name === "string" ? data.name : "未命名 Skill"
+          const tags = Array.isArray(data.hotspot_types) ? data.hotspot_types.filter((tag): tag is string => typeof tag === "string").slice(0, 3) : []
+          return <details key={typeof data.id === "string" ? data.id : name} className="skill-asset stable"><summary><div className="asset-status"><CheckCircle2 size={15} /><span>stable</span></div><div><h3>{name}</h3><p>{typeof data.choose_when === "string" ? data.choose_when : ""}</p><small>{typeof data.account_type === "string" ? data.account_type : "团队 Skill"} · 质量分 {String(data.quality_score ?? "-")}</small></div><div className="asset-tags">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div><time>{stableSnapshot?.updatedAt ? new Date(stableSnapshot.updatedAt).toLocaleDateString("zh-CN") : ""}</time></summary><div className="asset-detail"><section><span>写作方法</span><p>{typeof data.writing_method === "string" ? data.writing_method : ""}</p></section><section><span>风险边界</span><p>{typeof data.risk_boundary === "string" ? data.risk_boundary : ""}</p></section><code>{typeof data.reference_file === "string" ? data.reference_file : ""}</code></div></details>
+        })}</div> : <div className="library-empty"><FileText size={22} /><strong>{stableSnapshot?.verified ? "当前 stable 尚未发布 Skill" : "未连接真实 stable repository"}</strong></div>}</section>
       ) : null}
     </section>
   )

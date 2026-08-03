@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { DepositPage } from "./DepositPage"
 import { DiagnosticsPage } from "./DiagnosticsPage"
 import { LibraryPage } from "./LibraryPage"
-import { buildReleasePack, suggestedReleaseVersion } from "./releasePack"
+import { preparePublishCandidate } from "./releasePack"
 import { WorkbenchShell } from "./Shell"
 import { skillWorkbenchBridge } from "./skillWorkbenchBridge"
 import type {
@@ -11,7 +11,9 @@ import type {
   HumanReview,
   LocalCandidate,
   PublishProgress,
+  PublishResult,
   RuntimeHealth,
+  StableRepositorySnapshot,
   SourceRecord,
   WorkbenchPage,
 } from "./types"
@@ -64,6 +66,7 @@ export default function SkillWorkbench() {
   const [persistenceReady, setPersistenceReady] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [health, setHealth] = useState<RuntimeHealth | null>(null)
+  const [stableSnapshot, setStableSnapshot] = useState<StableRepositorySnapshot | null>(null)
   const [healthRefreshing, setHealthRefreshing] = useState(false)
   const [mediaProcessing, setMediaProcessing] = useState(false)
   const [mediaProgress, setMediaProgress] = useState<string | null>(null)
@@ -73,6 +76,7 @@ export default function SkillWorkbench() {
   const [remediatingCandidateId, setRemediatingCandidateId] = useState<string | null>(null)
   const [publishingCandidateId, setPublishingCandidateId] = useState<string | null>(null)
   const [publishProgress, setPublishProgress] = useState<PublishProgress | null>(null)
+  const [publishJobs, setPublishJobs] = useState<Record<string, PublishResult | null>>({})
   const [diagnosticLogs, setDiagnosticLogs] = useState<DiagnosticLog[]>([])
   const [logsRefreshing, setLogsRefreshing] = useState(false)
 
@@ -115,6 +119,13 @@ export default function SkillWorkbench() {
   }, [])
 
   useEffect(() => {
+    if (!candidates.length) return
+    Promise.all(candidates.map(async (candidate) => [candidate.id, await skillWorkbenchBridge.latestPublishJob(candidate.id)] as const))
+      .then((entries) => setPublishJobs(Object.fromEntries(entries)))
+      .catch(() => undefined)
+  }, [candidates])
+
+  useEffect(() => {
     let dispose: (() => void) | undefined
     skillWorkbenchBridge.onPublishProgress((progress) => setPublishProgress(progress)).then((unlisten) => { dispose = unlisten })
     return () => dispose?.()
@@ -129,8 +140,8 @@ export default function SkillWorkbench() {
 
   const refreshHealth = useCallback(() => {
     setHealthRefreshing(true)
-    skillWorkbenchBridge.runtimeHealth()
-      .then(setHealth)
+    Promise.all([skillWorkbenchBridge.runtimeHealth(), skillWorkbenchBridge.loadStableRepositorySnapshot()])
+      .then(([runtime, snapshot]) => { setHealth(runtime); setStableSnapshot(snapshot) })
       .catch((error) => setNotice(`系统诊断失败：${String(error)}`))
       .finally(() => { setHealthRefreshing(false); void refreshDiagnosticLogs() })
   }, [refreshDiagnosticLogs])
@@ -353,12 +364,14 @@ export default function SkillWorkbench() {
     const candidate = candidateOverride ?? candidates.find((item) => item.id === candidateId)
     if (!candidate) return
     setPublishingCandidateId(candidateId)
-    setPublishProgress({ stage: "package", message: "正在准备 stable Skill 发布包" })
+    setPublishProgress({ stage: "fetching", message: "正在安全同步目标 Skill 仓库" })
     try {
-      const pack = buildReleasePack(candidate, suggestedReleaseVersion(candidate))
-      const result = await skillWorkbenchBridge.publishReleaseCandidate(candidate, pack)
-      updateCandidate(candidateId, (current) => markCandidateExported(current, pack.version, result.manifestPath))
-      setNotice(result.status === "published" ? `stable 已发布到 GitHub：${result.repository}` : `stable 已在本地仓库提交：${result.manifestPath}`)
+      const publishId = preparePublishCandidate(candidate)
+      const result = await skillWorkbenchBridge.publishReleaseCandidate(publishId)
+      setPublishJobs((current) => ({ ...current, [candidateId]: result }))
+      updateCandidate(candidateId, (current) => markCandidateExported(current, result.version, result.manifestPath ?? ""))
+      setNotice(result.remoteVerifiedAt ? `stable 已发布并完成远端验证：${result.commitUrl ?? result.commitSha}` : `stable 已提交到本地仓库：${result.manifestPath}`)
+      setStableSnapshot(await skillWorkbenchBridge.loadStableRepositorySnapshot())
     } catch (error) {
       setNotice(`正式版本发布失败：${errorMessage(error)}`)
     } finally {
@@ -368,7 +381,7 @@ export default function SkillWorkbench() {
     }
   }
 
-  const confirmAndPublishCandidate = (candidateId: string) => {
+  const confirmAndPublishCandidate = async (candidateId: string) => {
     const candidate = candidates.find((item) => item.id === candidateId)
     if (!candidate) return
     if (candidate.modelEvaluation?.status !== "passed" || candidate.modelEvaluation.score < 80) {
@@ -382,7 +395,9 @@ export default function SkillWorkbench() {
       reviewedAt: new Date().toISOString(),
     }
     const approved = recordHumanReview(candidate, review)
-    updateCandidate(candidateId, () => approved)
+    const nextCandidates = candidates.map((item) => item.id === candidateId ? approved : item)
+    setCandidates(nextCandidates)
+    await skillWorkbenchBridge.save({ session, candidates: nextCandidates })
     setNotice("最终发布确认已记录，正在生成并同步 stable Skill。")
     void recordUiLog({ action: "candidate.publish_confirmation", stage: "human_confirmation", status: "success", code: "CANDIDATE_PUBLISH_CONFIRMED", message: "用户已确认发布 stable Skill", location: "SkillWorkbench.tsx:confirmAndPublishCandidate", detail: "已记录最终确认；不记录 Skill 正文或来源稿件。" })
     void exportCandidate(candidateId, approved)
@@ -407,8 +422,8 @@ export default function SkillWorkbench() {
   return (
     <WorkbenchShell page={page} candidateCount={candidates.length} onPageChange={(nextPage) => { setNotice(null); setPage(nextPage) }}>
       {page === "deposit" ? <DepositPage session={session} notice={notice} processing={mediaProcessing} progressMessage={mediaProgress} proofreading={proofreading} analyzing={analyzing} onRecognizeLink={recognizeLink} onImportMedia={importMedia} onUseTranscript={useTranscript} onUpdateTranscript={updateTranscript} onProofread={proofread} onFinalizeProofread={finalizeProofread} onReset={resetDeposit} /> : null}
-      {page === "library" ? <LibraryPage candidates={candidates} notice={notice} onPublishConfirmed={confirmAndPublishCandidate} onRetryExport={exportCandidate} evaluatingCandidateId={evaluatingCandidateId} remediatingCandidateId={remediatingCandidateId} publishingCandidateId={publishingCandidateId} publishProgress={publishProgress} /> : null}
-      {page === "diagnostics" ? <DiagnosticsPage candidates={candidates} health={health} refreshing={healthRefreshing} onRefresh={refreshHealth} logs={diagnosticLogs} logsRefreshing={logsRefreshing} onRefreshLogs={() => void refreshDiagnosticLogs()} onClearLogs={() => void clearDiagnosticLogs()} /> : null}
+      {page === "library" ? <LibraryPage candidates={candidates} stableSnapshot={stableSnapshot} publishJobs={publishJobs} notice={notice} onPublishConfirmed={(id) => void confirmAndPublishCandidate(id)} onRetryExport={exportCandidate} evaluatingCandidateId={evaluatingCandidateId} remediatingCandidateId={remediatingCandidateId} publishingCandidateId={publishingCandidateId} publishProgress={publishProgress} /> : null}
+      {page === "diagnostics" ? <DiagnosticsPage candidates={candidates} health={health} stableSnapshot={stableSnapshot} refreshing={healthRefreshing} onRefresh={refreshHealth} logs={diagnosticLogs} logsRefreshing={logsRefreshing} onRefreshLogs={() => void refreshDiagnosticLogs()} onClearLogs={() => void clearDiagnosticLogs()} /> : null}
     </WorkbenchShell>
   )
 }

@@ -117,7 +117,48 @@ export interface RuntimeHealth {
     protocolVersion: string
   }
   credentialStore: "available_unverified" | "unavailable"
+  stableSnapshot?: StableRepositorySnapshot | null
+  stableSnapshotError?: string | null
   checkedAt: string
+}
+
+export interface StableRepositorySnapshot {
+  configured: boolean
+  verified: boolean
+  hasStable: boolean
+  version: string | null
+  updatedAt: string | null
+  packagePath: string | null
+  manifestPath: string | null
+  repositoryPath: string | null
+  remoteUrl: string | null
+  branch: string | null
+  skills: Array<Record<string, unknown>>
+  runtimeFiles: Record<string, string>
+  error: string | null
+  preview?: boolean
+}
+
+export interface PublishJob {
+  id: string
+  candidateId: string
+  version: string
+  status: "pending" | "running" | "succeeded" | "failed"
+  stage: "pending" | "loading_base" | "building" | "validating" | "committing" | "fetching" | "rebasing" | "pushing" | "verifying" | "succeeded" | "failed"
+  repositoryPath: string
+  remoteUrl: string
+  remote: string
+  branch: string
+  packagePath: string | null
+  manifestPath: string | null
+  commitSha: string | null
+  commitUrl: string | null
+  startedAt: string
+  updatedAt: string
+  finishedAt: string | null
+  errorCode: string | null
+  errorMessage: string | null
+  remoteVerifiedAt: string | null
 }
 
 export type DiagnosticStatus = "started" | "success" | "error" | "info"
@@ -221,30 +262,9 @@ export interface RepositorySetupRequest {
   localParentPath?: string
 }
 
-export interface PublishResult {
-  status: "published" | "committed_local"
-  version: string
-  repository: string
-  packagePath: string
-  manifestPath: string
-  publishedAt: string
-}
+export type PublishResult = PublishJob
 
 export interface PublishProgress {
-  stage: "package" | "commit" | "fetch" | "rebase" | "push" | "completed" | "failed"
+  stage: PublishJob["stage"]
   message: string
-}
-
-export interface ReleasePack {
-  schema_version: 1
-  version: string
-  active_skill_count: number
-  candidate: {
-    id: string
-    name: string
-    sourceCount: number
-    qualityScore: number
-    evaluatedAt: string
-  }
-  files: Record<string, string>
 }

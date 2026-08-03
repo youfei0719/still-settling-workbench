@@ -192,6 +192,28 @@ CREATE TABLE IF NOT EXISTS release_exports (
   exported_at TEXT NOT NULL,
   UNIQUE(candidate_id, version)
 );
+CREATE TABLE IF NOT EXISTS publish_jobs (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES candidate_skills(id) ON DELETE CASCADE,
+  version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  repository_path TEXT NOT NULL,
+  remote_url TEXT NOT NULL,
+  remote TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  package_path TEXT,
+  manifest_path TEXT,
+  commit_sha TEXT,
+  commit_url TEXT,
+  started_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  remote_verified_at TEXT,
+  UNIQUE(candidate_id, version)
+);
 CREATE TABLE IF NOT EXISTS diagnostic_logs (
   id TEXT PRIMARY KEY,
   trace_id TEXT NOT NULL,
@@ -212,6 +234,8 @@ CREATE INDEX IF NOT EXISTS idx_deposit_events_created ON deposit_events(session_
 CREATE INDEX IF NOT EXISTS idx_candidate_skills_updated ON candidate_skills(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_candidate_sources_candidate ON candidate_sources(candidate_id, added_at);
 CREATE INDEX IF NOT EXISTS idx_release_exports_candidate ON release_exports(candidate_id, exported_at DESC);
+CREATE INDEX IF NOT EXISTS idx_publish_jobs_candidate ON publish_jobs(candidate_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_jobs_active_candidate ON publish_jobs(candidate_id) WHERE status IN ('pending', 'running');
 CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_created ON diagnostic_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_trace ON diagnostic_logs(trace_id, created_at);
 "#;
@@ -443,6 +467,85 @@ impl DesktopDb {
         raw.map(|value| serde_json::from_str(&value))
             .transpose()
             .map_err(Into::into)
+    }
+
+    pub fn load_candidate(&self, candidate_id: &str) -> Result<Option<Value>, DbError> {
+        let connection = self.connection.lock().map_err(|_| DbError::Lock)?;
+        let raw: Option<String> = connection
+            .query_row(
+                "SELECT payload_json FROM candidate_skills WHERE id=?1",
+                params![candidate_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|value| serde_json::from_str(&value)).transpose().map_err(Into::into)
+    }
+
+    pub fn latest_publish_job(&self, candidate_id: &str) -> Result<Option<Value>, DbError> {
+        let connection = self.connection.lock().map_err(|_| DbError::Lock)?;
+        let raw: Option<String> = connection
+            .query_row(
+                "SELECT json_object('id',id,'candidateId',candidate_id,'version',version,'status',status,'stage',stage,'repositoryPath',repository_path,'remoteUrl',remote_url,'remote',remote,'branch',branch,'packagePath',package_path,'manifestPath',manifest_path,'commitSha',commit_sha,'commitUrl',commit_url,'startedAt',started_at,'updatedAt',updated_at,'finishedAt',finished_at,'errorCode',error_code,'errorMessage',error_message,'remoteVerifiedAt',remote_verified_at) FROM publish_jobs WHERE candidate_id=?1 ORDER BY updated_at DESC LIMIT 1",
+                params![candidate_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|value| serde_json::from_str(&value)).transpose().map_err(Into::into)
+    }
+
+    pub fn save_publish_job(&self, job: &Value) -> Result<Value, DbError> {
+        let id = required_str(job, "id")?;
+        let candidate_id = required_str(job, "candidateId")?;
+        let version = required_str(job, "version")?;
+        let status = required_str(job, "status")?;
+        let stage = required_str(job, "stage")?;
+        let repository_path = required_str(job, "repositoryPath")?;
+        let remote_url = job.get("remoteUrl").and_then(Value::as_str).unwrap_or("");
+        let remote = required_str(job, "remote")?;
+        let branch = required_str(job, "branch")?;
+        let started_at = required_str(job, "startedAt")?;
+        let updated_at = required_str(job, "updatedAt")?;
+        let connection = self.connection.lock().map_err(|_| DbError::Lock)?;
+        connection.execute(
+            "INSERT INTO publish_jobs(id,candidate_id,version,status,stage,repository_path,remote_url,remote,branch,package_path,manifest_path,commit_sha,commit_url,started_at,updated_at,finished_at,error_code,error_message,remote_verified_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) ON CONFLICT(id) DO UPDATE SET status=excluded.status,stage=excluded.stage,package_path=excluded.package_path,manifest_path=excluded.manifest_path,commit_sha=excluded.commit_sha,commit_url=excluded.commit_url,updated_at=excluded.updated_at,finished_at=excluded.finished_at,error_code=excluded.error_code,error_message=excluded.error_message,remote_verified_at=excluded.remote_verified_at",
+            params![id, candidate_id, version, status, stage, repository_path, remote_url, remote, branch, job.get("packagePath").and_then(Value::as_str), job.get("manifestPath").and_then(Value::as_str), job.get("commitSha").and_then(Value::as_str), job.get("commitUrl").and_then(Value::as_str), started_at, updated_at, job.get("finishedAt").and_then(Value::as_str), job.get("errorCode").and_then(Value::as_str), job.get("errorMessage").and_then(Value::as_str), job.get("remoteVerifiedAt").and_then(Value::as_str)],
+        )?;
+        Ok(job.clone())
+    }
+
+    pub fn mark_candidate_released(&self, candidate_id: &str, version: &str, path: &str) -> Result<(), DbError> {
+        let mut connection = self.connection.lock().map_err(|_| DbError::Lock)?;
+        let transaction = connection.transaction()?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let raw: String = transaction.query_row(
+            "SELECT value_json FROM app_state WHERE key = 'skill_workbench_v2'",
+            [],
+            |row| row.get(0),
+        )?;
+        let mut state: Value = serde_json::from_str(&raw)?;
+        let candidate_payload = {
+            let candidates = state.get_mut("candidates").and_then(Value::as_array_mut).ok_or(DbError::MissingSnapshot)?;
+            let candidate = candidates.iter_mut().find(|candidate| candidate.get("id").and_then(Value::as_str) == Some(candidate_id)).ok_or(DbError::MissingSnapshot)?;
+            candidate["release"] = serde_json::json!({"version": version, "path": path, "exportedAt": now});
+            candidate["status"] = Value::String("exported".into());
+            candidate["updatedAt"] = Value::String(now.clone());
+            serde_json::to_string(candidate)?
+        };
+        transaction.execute(
+            "UPDATE app_state SET value_json=?1,updated_at=?2 WHERE key='skill_workbench_v2'",
+            params![serde_json::to_string(&state)?, now],
+        )?;
+        transaction.execute(
+            "UPDATE candidate_skills SET status='exported',payload_json=?1,updated_at=?2 WHERE id=?3",
+            params![candidate_payload, now, candidate_id],
+        )?;
+        transaction.execute("DELETE FROM release_exports WHERE candidate_id=?1", params![candidate_id])?;
+        transaction.execute(
+            "INSERT INTO release_exports(id,candidate_id,version,path,exported_at) VALUES(?1,?2,?3,?4,?5)",
+            params![format!("{candidate_id}-{version}"), candidate_id, version, path, now],
+        )?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn save_app_value(&self, key: &str, value: &Value) -> Result<(), DbError> {

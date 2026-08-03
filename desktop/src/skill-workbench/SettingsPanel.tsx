@@ -1,4 +1,4 @@
-import { CheckCircle2, Clipboard, FolderGit2, Github, KeyRound, LoaderCircle, RefreshCw, ServerCog, Wrench } from "lucide-react"
+import { CheckCircle2, Clipboard, FolderGit2, KeyRound, LoaderCircle, RefreshCw, ServerCog, Wrench } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { isNativeDesktop, skillWorkbenchBridge } from "./skillWorkbenchBridge"
 import type { LocalSettings, ProviderModels, RepositorySetupRequest, SettingsUpdate } from "./types"
@@ -173,7 +173,7 @@ export function SettingsPanel({ onSettingsChanged }: { onSettingsChanged?: () =>
         {setupMode === "create" ? <label>可见性<select value={visibility} onChange={(event) => setVisibility(event.target.value as "private" | "public")}><option value="private">私有</option><option value="public">公开</option></select></label> : null}
         <label>本地保存父目录（可选）<input value={parentPath} placeholder="留空使用文稿目录" onChange={(event) => setParentPath(event.target.value)} /></label>
       </div>
-      <button type="button" className="primary-command" onClick={() => void setupRepository()} disabled={busy !== null}><Github size={14} />{busy === "repository" ? "配置中..." : setupMode === "connect" ? "连接并自动配置" : setupMode === "create" ? "创建并初始化" : "创建本地项目"}</button>
+      <button type="button" className="primary-command" onClick={() => void setupRepository()} disabled={busy !== null}><FolderGit2 size={14} />{busy === "repository" ? "配置中..." : setupMode === "connect" ? "连接并自动配置" : setupMode === "create" ? "创建并初始化" : "创建本地项目"}</button>
     </div>
 
     <div className="settings-section">

@@ -1,13 +1,13 @@
 import { AlertCircle, CheckCircle2, Clipboard, Cpu, Database, Download, HardDrive, KeyRound, LoaderCircle, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
-import repositorySkillData from "virtual:douyin-skill-repository"
 import { useMemo, useState } from "react"
-import type { DiagnosticLog, LocalCandidate, RuntimeHealth } from "./types"
+import type { DiagnosticLog, LocalCandidate, RuntimeHealth, StableRepositorySnapshot } from "./types"
 import { candidateGates } from "./workflow"
 import { SettingsPanel } from "./SettingsPanel"
 
 export function DiagnosticsPage({
   candidates,
   health,
+  stableSnapshot,
   refreshing,
   onRefresh,
   logs,
@@ -17,6 +17,7 @@ export function DiagnosticsPage({
 }: {
   candidates: LocalCandidate[]
   health: RuntimeHealth | null
+  stableSnapshot: StableRepositorySnapshot | null
   refreshing: boolean
   onRefresh: () => void
   logs: DiagnosticLog[]
@@ -30,9 +31,9 @@ export function DiagnosticsPage({
     {
       icon: CheckCircle2,
       title: "stable 文件完整性",
-      value: repositorySkillData.version,
-      detail: `${repositorySkillData.skills.length} 个 Skill 的 manifest、路径和内容哈希来自同一不可变版本。`,
-      status: "healthy",
+      value: stableSnapshot?.verified ? (stableSnapshot.version ?? "尚未发布") : "未验证",
+      detail: stableSnapshot?.verified ? `${stableSnapshot.skills.length} 个 Skill 的 manifest、路径、大小和内容哈希均来自配置仓库。` : (stableSnapshot?.error ?? health?.stableSnapshotError ?? "浏览器只读预览，未运行 Tauri 仓库校验。"),
+      status: stableSnapshot?.verified ? "healthy" : "warning",
     },
     {
       icon: CheckCircle2,
@@ -95,7 +96,7 @@ export function DiagnosticsPage({
 
   return (
     <section className="diagnostics-page">
-      <header className="page-title"><div><h1>系统诊断</h1><p>分别检查运行时、stable 文件完整性和现行质量策略，不把静态文案当健康状态。</p></div><button type="button" className="secondary-command" disabled={refreshing} onClick={onRefresh}>{refreshing ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}重新检查</button></header>
+      <header className="page-title"><div><h1>系统诊断</h1><p>stable 状态仅来自 Tauri 对配置仓库的真实读取与哈希校验。</p></div><button type="button" className="secondary-command" disabled={refreshing} onClick={onRefresh}>{refreshing ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}重新检查</button></header>
       <SettingsPanel onSettingsChanged={onRefresh} />
       <div className="diagnostic-overview"><div><Database size={18} /><span>运行模式</span><strong>{health?.mode === "native" ? "Tauri 原生运行时" : "浏览器开发预览"}</strong><small>{health ? `检查于 ${new Date(health.checkedAt).toLocaleTimeString("zh-CN")}` : "正在读取真实状态"}</small></div><div><ShieldCheck size={18} /><span>发布边界</span><strong>本机 Skill 与 stable 严格分离</strong><small>一条授权真实稿件即可沉淀；发布 stable 时需模型评测和人工主审</small></div></div>
       <div className="diagnostic-list">{checks.map((check) => <article key={check.title}><span className={`check-icon is-${check.status}`}><check.icon size={17} /></span><div><h2>{check.title}</h2><p>{check.detail}</p></div><strong>{check.value}</strong></article>)}</div>
@@ -104,7 +105,7 @@ export function DiagnosticsPage({
         <div className="segmented compact" aria-label="日志筛选">{[["all", "全部"], ["error", "失败"], ["success", "成功"]].map(([value, label]) => <button type="button" key={value} className={scope === value ? "is-active" : ""} onClick={() => setScope(value as typeof scope)}>{label}</button>)}</div>
         {visibleLogs.length ? <div className="runtime-log-list">{visibleLogs.map((log) => <details key={log.id} className={`is-${log.status}`}><summary><span className="log-status">{log.status === "error" ? <AlertCircle size={14} /> : log.status === "success" ? <CheckCircle2 size={14} /> : <LoaderCircle size={14} />}</span><div><strong>{log.message}</strong><small>{new Date(log.createdAt).toLocaleString("zh-CN")} · {log.action}</small></div><code>{log.code}</code></summary><div className="runtime-log-detail"><dl><div><dt>阶段</dt><dd>{log.stage}</dd></div><div><dt>位置</dt><dd><code>{log.location}</code></dd></div><div><dt>关联 ID</dt><dd><code>{log.traceId}</code></dd></div>{log.detail ? <div><dt>技术详情</dt><dd>{log.detail}</dd></div> : null}</dl><button type="button" className="icon-command" title="复制这条日志" onClick={() => void copyLog(log)}><Clipboard size={14} /></button></div></details>)}</div> : <div className="runtime-log-empty">尚无{scope === "all" ? "运行" : scope === "error" ? "失败" : "成功"}日志。</div>}
       </section>
-      <section className="boundary-table"><header><h2>系统边界</h2><p>每层只处理自己的事实来源。</p></header><div><span>React 工作台</span><p>来源确认、结构编辑、模型评测与主审记录</p></div><div><span>Tauri 命令层</span><p>文件选择、媒体处理、模型请求、凭据、SQLite 与 Git 发布事务</p></div><div><span>本机媒体链</span><p>临时 Chrome/Edge 上下文生成抖音请求签名，yt-dlp 负责降级，FFmpeg 与本机 MLX/转写 API 生成真实稿件，结束后清理全部临时数据</p></div><div><span>SQLite</span><p>来源、证据、候选、评测、主审和发布记录的本机事实来源</p></div><div><span>GitHub stable</span><p>生成不可变版本、文件 SHA-256 与 stable 指针后，由 Git 提交并推送</p></div></section>
+      <section className="boundary-table"><header><h2>系统边界</h2><p>每层只处理自己的事实来源。</p></header><div><span>React 工作台</span><p>浏览器预览只读且不伪造 stable；原生模式提交候选 ID 与最终确认。</p></div><div><span>Tauri 命令层</span><p>读取 SQLite 候选，校验目标 stable，合并 runtime、提交、推送并验证远端。</p></div><div><span>SQLite</span><p>来源、候选、评测、最终确认和 publish_jobs 是本机事实来源。</p></div><div><span>GitHub stable</span><p>不可变版本、文件 SHA-256 和 stable 指针经真实仓库读取后展示。</p></div></section>
     </section>
   )
 }

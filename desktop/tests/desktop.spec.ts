@@ -42,10 +42,11 @@ test("浏览器预览不会伪造下载、转写或自动校对", async ({ page 
   await expect(page.getByText("还没有 Skill 草稿")).toBeVisible()
 })
 
-test("稳定包完整性与历史质量告警分开显示", async ({ page }) => {
+test("浏览器预览不伪造 stable repository snapshot", async ({ page }) => {
   await page.getByRole("button", { name: /写作 Skill 库/ }).click()
-  await expect(page.getByText("5f2e84c8fa92", { exact: true })).toBeVisible()
-  await expect(page.getByText("单条授权真实稿件即可沉淀一个本机 Skill")).toBeVisible()
+  await expect(page.getByText("浏览器只读预览，未连接真实仓库")).toBeVisible()
+  await expect(page.getByText("浏览器只读预览不伪造 stable 数据")).toBeVisible()
+  await expect(page.getByText("未连接真实 stable repository")).toBeVisible()
 })
 
 test("系统诊断明确浏览器只读边界", async ({ page }) => {
@@ -53,13 +54,14 @@ test("系统诊断明确浏览器只读边界", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "系统诊断" })).toBeVisible()
   await expect(page.getByText("浏览器开发预览")).toBeVisible()
   await expect(page.getByText(/当前是浏览器只读预览/)).toBeVisible()
-  await expect(page.getByText("符合现行门禁")).toBeVisible()
+  await expect(page.getByText("浏览器只读预览，未连接真实仓库")).toBeVisible()
+  await expect(page.getByText("一条授权真实稿件即可沉淀；发布 stable 时需模型评测和人工主审")).toBeVisible()
   await page.getByRole("button", { name: "重新检查" }).click()
   await expect(page.getByText(/检查于/)).toBeVisible()
 })
 
 test("切换主页面时内容区回到顶部", async ({ page }) => {
-  await page.getByRole("button", { name: /写作 Skill 库/ }).click()
+  await page.setViewportSize({ width: 780, height: 480 })
   const main = page.locator(".skill-main > main")
   await main.evaluate((element) => { element.scrollTop = element.scrollHeight })
   expect(await main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)

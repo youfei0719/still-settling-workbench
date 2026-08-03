@@ -28,8 +28,8 @@ flowchart LR
   CMD --> MEDIA["yt-dlp + FFmpeg"]
   MEDIA --> ASR["audio/transcriptions API"]
   CMD --> LLM["chat/completions API"]
-  CMD --> GIT["本地 Git / GitHub"]
-  GIT --> STABLE["douyin-writing-skills: 不可变 package + stable manifest"]
+  CMD --> GIT["用户配置的本地 Git / GitHub Skill 仓库"]
+  GIT --> STABLE["immutable package + stable manifest"]
 ```
 
 ### 真实稿件
@@ -55,15 +55,16 @@ flowchart LR
 - 只接受 `SKILL.md`、`references/skills.json`、`references/research-playbook.md` 和 `references/skills/*.md`。
 - 同一版本目录不可覆盖；内容不同会被拒绝。
 - stable 清单包含每个运行时文件的路径、字节数和 SHA-256。
-- 发布只暂存工作台拥有的 package、stable 与固定加载器文件，不会 `git add .`。
-- GitHub 模式在发布包提交后检查工作区、执行 `git fetch --prune` 与 `git rebase <remote>/<branch>`，再执行 `git push <remote> HEAD:<branch>`。
-- 推送或自动整合失败时本地提交仍保留；不能自动整合时会中止 rebase，保护本地发布提交和任何未提交改动。
+- React 只提交候选 ID 与最终确认；Rust 从 SQLite 读取候选，先读取并校验用户配置仓库的当前 stable runtime，再按候选 ID 增量替换或新增 Skill，保留其余 Skill。
+- runtime 发布只暂存 `published/packages/<version>/` 和 `published/stable/manifest.json`，不会 `git add .`，也不会静默更新根目录加载器；加载器初始化、修复和升级是独立操作。
+- GitHub 模式在构建前检查工作区、执行 `git fetch --prune` 与 `merge --ff-only <remote>/<branch>`，再执行 `git push <remote> HEAD:<branch>`。
+- 推送后必须验证 `ls-remote` 与本地 commit 一致；公开仓库再按精确 commit SHA 检查 GitHub Raw manifest 和所有 runtime 哈希，所有模式都会用带凭据的干净 clone 校验 manifest、完整 runtime 和实际 loader。推送或整合失败时本地提交仍保留，可重试同一发布任务和版本。
 
 ## 本机数据与凭据
 
 | 数据 | 存储 |
 | --- | --- |
-| 来源、稿件、候选、事件、评测、主审、发布记录 | SQLite |
+| 来源、稿件、候选、事件、评测、最终确认、发布任务和发布记录 | SQLite |
 | 文本模型 Key、转写 Key、可选抖音 Cookie | Keychain / Credential Manager |
 | 原始本机媒体 | 用户原路径，只读 |
 | 临时下载与音频 | 应用缓存，任务结束清理 |
