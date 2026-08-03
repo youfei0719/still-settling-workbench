@@ -1,0 +1,1 @@
+{"desktop-main":{"identifier":"desktop-main","description":"Main desktop workbench capability","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open"]}}

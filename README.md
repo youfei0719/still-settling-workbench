@@ -193,11 +193,24 @@ uv run --project backend python scripts/verify-open-source-release.py
 ```text
 backend/                 FastAPI API、提取链路、质量门禁和本机设置服务
 frontend/                React 工作台
+desktop/                 Tauri 桌面客户端；只包含工作台代码与发布加载器模板
 scripts/                 本机启动与开源发布检查
 evals/workbench/         仅包含可公开的评测配置和提供方代码
 .env.example             通用本机配置示例
 .env.workbench.example   工作台能力配置示例
 ```
+
+## 桌面客户端
+
+`desktop/` 是本项目的本地优先 Tauri 客户端。它不会内置或跟踪任何真实 Skill 包；首次发布时，客户端会按用户在系统诊断中配置的目标仓库创建不可变 package 与 stable 清单。
+
+```bash
+cd desktop
+npm install
+npm run tauri:dev
+```
+
+桌面端发布到 `youfei0719/douyin-writing-skills` 时只会写入该仓库的 `published/`、固定加载器与 stable 清单。真实稿件、媒体、SQLite、Cookie、API Key、诊断日志和构建产物均不进入 Git。
 
 ## License
 
