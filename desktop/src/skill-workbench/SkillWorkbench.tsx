@@ -5,6 +5,8 @@ import { LibraryPage } from "./LibraryPage"
 import { preparePublishCandidate } from "./releasePack"
 import { WorkbenchShell } from "./Shell"
 import { skillWorkbenchBridge } from "./skillWorkbenchBridge"
+import { useDesktopUpdater } from "./updater"
+import { UpdatePrompt } from "./UpdatePrompt"
 import type {
   DepositSession,
   DiagnosticLog,
@@ -79,6 +81,8 @@ export default function SkillWorkbench() {
   const [publishJobs, setPublishJobs] = useState<Record<string, PublishResult | null>>({})
   const [diagnosticLogs, setDiagnosticLogs] = useState<DiagnosticLog[]>([])
   const [logsRefreshing, setLogsRefreshing] = useState(false)
+  const [updatePromptDismissed, setUpdatePromptDismissed] = useState(false)
+  const updater = useDesktopUpdater()
 
   const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 
@@ -104,6 +108,13 @@ export default function SkillWorkbench() {
       // Diagnostic persistence must never interrupt the user's active workflow.
     }
   }, [])
+
+  useEffect(() => {
+    if (updater.status !== "error" || !updater.error) return
+    void recordUiLog({ action: "desktop.updater", stage: "update", status: "error", code: "UPDATER_OPERATION_FAILED", message: "桌面端更新操作失败", location: "SkillWorkbench.tsx:updater", detail: null })
+  }, [recordUiLog, updater.error, updater.status])
+
+  useEffect(() => { setUpdatePromptDismissed(false) }, [updater.update?.version])
 
   useEffect(() => {
     skillWorkbenchBridge.load().then((saved) => {
@@ -419,11 +430,12 @@ export default function SkillWorkbench() {
     }
   }
 
-  return (
+  return (<>
     <WorkbenchShell page={page} candidateCount={candidates.length} onPageChange={(nextPage) => { setNotice(null); setPage(nextPage) }}>
       {page === "deposit" ? <DepositPage session={session} notice={notice} processing={mediaProcessing} progressMessage={mediaProgress} proofreading={proofreading} analyzing={analyzing} onRecognizeLink={recognizeLink} onImportMedia={importMedia} onUseTranscript={useTranscript} onUpdateTranscript={updateTranscript} onProofread={proofread} onFinalizeProofread={finalizeProofread} onReset={resetDeposit} /> : null}
       {page === "library" ? <LibraryPage candidates={candidates} stableSnapshot={stableSnapshot} publishJobs={publishJobs} notice={notice} onPublishConfirmed={(id) => void confirmAndPublishCandidate(id)} onRetryExport={exportCandidate} evaluatingCandidateId={evaluatingCandidateId} remediatingCandidateId={remediatingCandidateId} publishingCandidateId={publishingCandidateId} publishProgress={publishProgress} /> : null}
-      {page === "diagnostics" ? <DiagnosticsPage candidates={candidates} health={health} stableSnapshot={stableSnapshot} refreshing={healthRefreshing} onRefresh={refreshHealth} logs={diagnosticLogs} logsRefreshing={logsRefreshing} onRefreshLogs={() => void refreshDiagnosticLogs()} onClearLogs={() => void clearDiagnosticLogs()} /> : null}
+      {page === "diagnostics" ? <DiagnosticsPage candidates={candidates} health={health} stableSnapshot={stableSnapshot} refreshing={healthRefreshing} onRefresh={refreshHealth} logs={diagnosticLogs} logsRefreshing={logsRefreshing} onRefreshLogs={() => void refreshDiagnosticLogs()} onClearLogs={() => void clearDiagnosticLogs()} updater={updater} /> : null}
     </WorkbenchShell>
-  )
+    {updater.status === "available" && !updatePromptDismissed ? <UpdatePrompt updater={updater} onDismiss={() => setUpdatePromptDismissed(true)} /> : null}
+  </>)
 }

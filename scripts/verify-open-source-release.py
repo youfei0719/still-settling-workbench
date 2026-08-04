@@ -17,7 +17,7 @@ FORBIDDEN_PATHS = (
     re.compile(r"^evals/product-audit/"),
     re.compile(r"^evals/workbench/.*\.(?:json|md|png|jpe?g)$"),
 )
-ALLOWED_PATHS = {".env.example", ".env.workbench.example", "frontend/.env.example"}
+ALLOWED_PATHS = {".env.example", ".env.workbench.example", "frontend/.env.example", "evals/workbench/acceptance_samples.json"}
 # Detect user-specific home paths without embedding a previous maintainer's
 # account name, machine name, or private gateway in this public checker.
 ABSOLUTE_MACOS_USER_PATH = re.compile(

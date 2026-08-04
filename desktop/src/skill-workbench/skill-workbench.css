@@ -320,6 +320,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .diagnostic-overview strong { margin-top: 2px; font-size: 11px; }
 .diagnostic-overview small { margin-top: 3px; color: var(--sw-faint); font-size: 8px; }
 .diagnostic-list { overflow: hidden; border: 1px solid var(--sw-border); border-radius: 6px; background: #fff; }
+.updater-panel { margin: 12px 0; border: 1px solid var(--sw-border); border-radius: 6px; background: #fff; padding: 12px; }
+.updater-panel header, .update-available > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.updater-panel h2 { margin: 0; font-size: 14px; }
+.updater-panel p, .updater-panel small, .updater-panel span { color: var(--sw-muted); font-size: 12px; }
+.update-meta { line-height: 1.55; }
+.update-meta a { color: var(--sw-accent); overflow-wrap: anywhere; }
+.update-available { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--sw-border); }
+.update-status { margin: 10px 0 0; }
+.update-status.is-error { color: #ae3d32; display: flex; gap: 8px; flex-wrap: wrap; }
+.update-prompt-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgb(14 18 27 / 0.5); }
+.update-prompt { width: min(460px, 100%); padding: 24px; border: 1px solid var(--sw-border); border-radius: 8px; background: #fff; box-shadow: 0 20px 50px rgb(0 0 0 / 0.25); }
+.update-prompt h2 { margin: 0 0 8px; font-size: 18px; }
+.update-prompt p { margin: 8px 0; }
+.update-prompt small { color: var(--sw-muted); }
+.update-notes { white-space: pre-wrap; color: var(--sw-muted); }
+.update-prompt footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .diagnostic-list article { display: grid; min-height: 72px; grid-template-columns: 34px minmax(260px, 1fr) minmax(160px, .45fr); align-items: center; gap: 10px; border-bottom: 1px solid var(--sw-border); padding: 10px 12px; }
 .diagnostic-list article:last-child { border-bottom: 0; }
 .check-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 5px; background: #eff2f3; color: var(--sw-muted); }

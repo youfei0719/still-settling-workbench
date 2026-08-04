@@ -1,5 +1,21 @@
 # 依旧沉淀
 
+## 下载桌面端
+
+从 [GitHub Releases](https://github.com/youfei0719/still-settling-workbench/releases/latest) 下载最新版：macOS 选择 Universal DMG，Windows 优先选择 x64 `setup.exe`。
+
+## 自动更新
+
+`0.1.7` 是首个支持自动更新的桌面版本。旧版需要手动安装一次；之后应用会在启动后检查更新，也可在“系统诊断”手动检查。更新包由 Tauri updater 签名校验。未配置 Apple Developer ID、公证或 Windows 证书时，系统可能显示平台安全提示；这不影响 updater 签名校验。
+
+维护者发布下一版：
+
+```bash
+npm run release:desktop -- 0.1.8
+```
+
+妥善离线备份 updater 私钥；私钥丢失后，已安装应用无法继续验证后续更新。
+
 依旧沉淀是一个本地优先的短视频写作 Skill 工作台。它把经过授权、可验证的视频来源转成真实稿件，提炼可跨题材复用的写法结构，并在人工复核后发布到用户自己选择的 GitHub Skill 仓库或仅保存在本机。
 
 项目不把标题、描述或用户手输文本伪装成“已提取稿件”。无法取得真实内容时，流程会明确停止，而不是继续生成看似可信的结果。

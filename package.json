@@ -27,6 +27,7 @@
     "workbench:status": "bash scripts/workbench-local.sh status",
     "workbench:stop": "bash scripts/workbench-local.sh stop",
     "workbench:summary": ".venv/bin/python backend/scripts/workbench_status_report.py"
+    ,"release:desktop": "node scripts/release-desktop.mjs"
   },
   "devDependencies": {
     "promptfoo": "^0.121.19"

@@ -3,6 +3,8 @@ import { useMemo, useState } from "react"
 import type { DiagnosticLog, LocalCandidate, RuntimeHealth, StableRepositorySnapshot } from "./types"
 import { candidateGates } from "./workflow"
 import { SettingsPanel } from "./SettingsPanel"
+import { UpdaterPanel } from "./UpdaterPanel"
+import type { DesktopUpdaterState } from "./updater"
 
 export function DiagnosticsPage({
   candidates,
@@ -14,6 +16,7 @@ export function DiagnosticsPage({
   logsRefreshing,
   onRefreshLogs,
   onClearLogs,
+  updater,
 }: {
   candidates: LocalCandidate[]
   health: RuntimeHealth | null
@@ -24,6 +27,7 @@ export function DiagnosticsPage({
   logsRefreshing: boolean
   onRefreshLogs: () => void
   onClearLogs: () => void
+  updater: DesktopUpdaterState
 }) {
   const [scope, setScope] = useState<"all" | "error" | "success">("all")
   const readyCandidates = candidates.filter((candidate) => Object.values(candidateGates(candidate)).every(Boolean))
@@ -98,6 +102,7 @@ export function DiagnosticsPage({
     <section className="diagnostics-page">
       <header className="page-title"><div><h1>系统诊断</h1><p>stable 状态仅来自 Tauri 对配置仓库的真实读取与哈希校验。</p></div><button type="button" className="secondary-command" disabled={refreshing} onClick={onRefresh}>{refreshing ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}重新检查</button></header>
       <SettingsPanel onSettingsChanged={onRefresh} />
+      <UpdaterPanel updater={updater} />
       <div className="diagnostic-overview"><div><Database size={18} /><span>运行模式</span><strong>{health?.mode === "native" ? "Tauri 原生运行时" : "浏览器开发预览"}</strong><small>{health ? `检查于 ${new Date(health.checkedAt).toLocaleTimeString("zh-CN")}` : "正在读取真实状态"}</small></div><div><ShieldCheck size={18} /><span>发布边界</span><strong>本机 Skill 与 stable 严格分离</strong><small>一条授权真实稿件即可沉淀；发布 stable 时需模型评测和人工主审</small></div></div>
       <div className="diagnostic-list">{checks.map((check) => <article key={check.title}><span className={`check-icon is-${check.status}`}><check.icon size={17} /></span><div><h2>{check.title}</h2><p>{check.detail}</p></div><strong>{check.value}</strong></article>)}</div>
       <section className="runtime-log-panel">

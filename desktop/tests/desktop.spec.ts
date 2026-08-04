@@ -56,6 +56,7 @@ test("系统诊断明确浏览器只读边界", async ({ page }) => {
   await expect(page.getByText(/当前是浏览器只读预览/)).toBeVisible()
   await expect(page.getByText("浏览器只读预览，未连接真实仓库")).toBeVisible()
   await expect(page.getByText("一条授权真实稿件即可沉淀；发布 stable 时需模型评测和人工主审")).toBeVisible()
+  await expect(page.getByText("自动更新仅在已安装的 Tauri 桌面端可用")).toBeVisible()
   await page.getByRole("button", { name: "重新检查" }).click()
   await expect(page.getByText(/检查于/)).toBeVisible()
 })
