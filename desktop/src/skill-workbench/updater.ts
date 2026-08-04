@@ -123,7 +123,7 @@ export function defaultUpdaterAdapter() {
   return isNativeDesktop() ? nativeUpdaterAdapter() : browserUpdaterAdapter()
 }
 
-export function useDesktopUpdater(adapter = defaultUpdaterAdapter(), delayMs = 4000): DesktopUpdaterState {
+export function useDesktopUpdater(adapter = defaultUpdaterAdapter()): DesktopUpdaterState {
   const activeAdapter = useRef(adapter).current
   const [state, dispatch] = useReducer(updaterReducer, activeAdapter.supported, initialUpdaterState)
   const checking = useRef(false)
@@ -158,12 +158,6 @@ export function useDesktopUpdater(adapter = defaultUpdaterAdapter(), delayMs = 4
       checking.current = false
     }
   }, [activeAdapter, state.update])
-
-  useEffect(() => {
-    if (!activeAdapter.supported) return
-    const timer = window.setTimeout(() => { void checkForUpdates() }, delayMs)
-    return () => window.clearTimeout(timer)
-  }, [activeAdapter, checkForUpdates, delayMs])
 
   return useMemo(() => ({ ...state, checkForUpdates, installUpdate }), [state, checkForUpdates, installUpdate])
 }

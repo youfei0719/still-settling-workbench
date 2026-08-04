@@ -1,8 +1,12 @@
+use crate::audit::sanitize_detail;
 use crate::db::DesktopDb;
 use crate::settings::{api_client, load_settings, read_secret};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::time::{sleep, Duration};
+
+const TRANSIENT_MODEL_RETRIES: u8 = 2;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +45,23 @@ fn json_content(value: &Value) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+fn is_transient_model_status(status: reqwest::StatusCode) -> bool {
+    matches!(status, reqwest::StatusCode::TOO_MANY_REQUESTS | reqwest::StatusCode::BAD_GATEWAY | reqwest::StatusCode::SERVICE_UNAVAILABLE | reqwest::StatusCode::GATEWAY_TIMEOUT)
+}
+
+async fn send_chat_request(http: &reqwest::Client, url: &str, key: &str, body: &Value) -> Result<(reqwest::StatusCode, String), String> {
+    for attempt in 0..=TRANSIENT_MODEL_RETRIES {
+        let response = http.post(url).bearer_auth(key).json(body).send().await.map_err(|error| format!("模型连接失败：{error}"))?;
+        let status = response.status();
+        let raw = response.text().await.map_err(|error| error.to_string())?;
+        if !is_transient_model_status(status) || attempt == TRANSIENT_MODEL_RETRIES {
+            return Ok((status, raw));
+        }
+        sleep(Duration::from_millis(600 * u64::from(attempt + 1))).await;
+    }
+    unreachable!("retry loop always returns")
+}
+
 async fn chat_json(db: &DesktopDb, system: &str, user: &str) -> Result<(Value, String), String> {
     let settings = load_settings(db)?;
     if settings.llm_mode == "offline" {
@@ -62,15 +83,7 @@ async fn chat_json(db: &DesktopDb, system: &str, user: &str) -> Result<(Value, S
     });
     let (http, _) = api_client(&settings, 120)?;
     let url = endpoint(&settings.llm_api_base, "chat/completions");
-    let response = http
-        .post(&url)
-        .bearer_auth(&key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| format!("模型连接失败：{error}"))?;
-    let mut status = response.status();
-    let mut raw = response.text().await.map_err(|error| error.to_string())?;
+    let (mut status, mut raw) = send_chat_request(&http, &url, &key, &body).await?;
     if status == reqwest::StatusCode::BAD_REQUEST
         && raw.to_ascii_lowercase().contains("response_format")
     {
@@ -78,15 +91,7 @@ async fn chat_json(db: &DesktopDb, system: &str, user: &str) -> Result<(Value, S
         fallback
             .as_object_mut()
             .map(|object| object.remove("response_format"));
-        let response = http
-            .post(&url)
-            .bearer_auth(&key)
-            .json(&fallback)
-            .send()
-            .await
-            .map_err(|error| format!("模型兼容请求失败：{error}"))?;
-        status = response.status();
-        raw = response.text().await.map_err(|error| error.to_string())?;
+        (status, raw) = send_chat_request(&http, &url, &key, &fallback).await?;
     }
     if !status.is_success() {
         let detail = serde_json::from_str::<Value>(&raw)
@@ -98,6 +103,10 @@ async fn chat_json(db: &DesktopDb, system: &str, user: &str) -> Result<(Value, S
                     .map(ToOwned::to_owned)
             })
             .unwrap_or_else(|| raw.chars().take(300).collect());
+        let detail = sanitize_detail(&detail);
+        if is_transient_model_status(status) {
+            return Err(format!("模型服务暂时不可用（{status}），已自动重试 {} 次仍失败：{detail}", TRANSIENT_MODEL_RETRIES));
+        }
         return Err(format!("模型请求失败（{status}）：{detail}"));
     }
     let envelope: Value =
@@ -366,5 +375,15 @@ mod tests {
     fn extracts_fenced_json_content() {
         let value = json!({"choices":[{"message":{"content":"```json\n{\"ok\":true}\n```"}}]});
         assert_eq!(json_content(&value).unwrap(), "{\"ok\":true}");
+    }
+
+    #[test]
+    fn retries_only_transient_gateway_and_rate_limit_statuses() {
+        assert!(is_transient_model_status(reqwest::StatusCode::BAD_GATEWAY));
+        assert!(is_transient_model_status(reqwest::StatusCode::SERVICE_UNAVAILABLE));
+        assert!(is_transient_model_status(reqwest::StatusCode::GATEWAY_TIMEOUT));
+        assert!(is_transient_model_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(!is_transient_model_status(reqwest::StatusCode::BAD_REQUEST));
+        assert!(!is_transient_model_status(reqwest::StatusCode::UNAUTHORIZED));
     }
 }
