@@ -208,6 +208,24 @@ fn valid_runtime_path(path: &str) -> bool {
         && (path == "SKILL.md" || path == "references/skills.json" || path == "references/research-playbook.md" || (path.starts_with("references/skills/") && path.ends_with(".md")))
 }
 
+fn contains_secret_like_text(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    ["sk-", "ghp_", "github_pat_", "authorization: bearer ", "bearer ", "-----begin private key-----", "akia"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn validate_candidate_public_fields(candidate: &Value) -> Result<(), String> {
+    for field in ["name", "purpose", "hook", "progression", "ending", "riskBoundary"] {
+        let value = candidate.get(field).and_then(Value::as_str).unwrap_or("");
+        if contains_secret_like_text(value) { return Err(format!("候选 {field} 包含疑似凭据，不能发布")); }
+        if ["http://", "https://", "file://", "/Users/", "\\Users\\", "/private/", "/var/"].iter().any(|marker| value.contains(marker)) {
+            return Err(format!("候选 {field} 包含来源 URL 或本机路径，不能发布"));
+        }
+    }
+    Ok(())
+}
+
 fn default_runtime() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("SKILL.md".into(), "# Douyin Writing Skills Runtime\n\nRead `references/skills.json` before selecting a writing method.\n".into()),
@@ -265,6 +283,7 @@ fn reference_markdown(candidate: &Value) -> String {
 }
 
 fn build_runtime(snapshot: &Value, candidate: &Value, version: &str) -> Result<(Map<String, Value>, usize), String> {
+    validate_candidate_public_fields(candidate)?;
     let mut files: Map<String, Value> = snapshot.get("runtimeFiles").and_then(Value::as_object).cloned().unwrap_or_default();
     if files.is_empty() { files = default_runtime().into_iter().map(|(key, value)| (key, Value::String(value))).collect(); }
     let raw = files.get("references/skills.json").and_then(Value::as_str).ok_or_else(|| "stable runtime 缺少 skills.json".to_string())?;
@@ -293,7 +312,9 @@ fn write_runtime_package(repository: &Path, version: &str, files: &Map<String, V
     let mut accepted = BTreeMap::new();
     for (path, content) in files {
         if !valid_runtime_path(path) { return Err(format!("发布包含未授权运行时路径：{path}")); }
-        accepted.insert(path.clone(), content.as_str().ok_or_else(|| format!("发布文件 {path} 不是文本"))?.to_string());
+        let content = content.as_str().ok_or_else(|| format!("发布文件 {path} 不是文本"))?;
+        if contains_secret_like_text(content) { return Err(format!("发布文件 {path} 包含疑似凭据")); }
+        accepted.insert(path.clone(), content.to_string());
     }
     if !accepted.contains_key("SKILL.md") || !accepted.contains_key("references/skills.json") { return Err("发布包缺少 SKILL.md 或 references/skills.json".into()); }
     let mut manifest_files = Vec::new();
@@ -513,6 +534,25 @@ mod tests {
 
     #[test]
     fn runtime_path_rejects_traversal() { assert!(valid_runtime_path("SKILL.md")); assert!(!valid_runtime_path("../SKILL.md")); assert!(!valid_runtime_path("scripts/publish.py")); }
+
+    #[test]
+    fn candidate_runtime_rejects_source_urls_paths_and_credentials() {
+        let snapshot = json!({});
+        for (field, value) in [("hook", "https://example.test/source"), ("progression", "/Users/example/private-note"), ("ending", "Bearer private-token-value")] {
+            let mut value_candidate = candidate("privacy-test");
+            value_candidate[field] = Value::String(value.into());
+            assert!(build_runtime(&snapshot, &value_candidate, "test-v1").is_err(), "{field} should be rejected");
+        }
+    }
+
+    #[test]
+    fn runtime_package_rejects_secret_like_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut files = default_runtime();
+        files.insert("references/research-playbook.md".into(), "Bearer private-token-value".into());
+        let files = files.into_iter().map(|(path, content)| (path, Value::String(content))).collect();
+        assert!(write_runtime_package(temp.path(), "test-v1", &files).is_err());
+    }
 
     #[test]
     fn github_loader_source_uses_configured_https_or_ssh_remote() {
