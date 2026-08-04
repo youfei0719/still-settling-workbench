@@ -26,13 +26,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: desktop
           args: --target universal-apple-darwin
@@ -41,9 +34,9 @@ jobs:
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
-          releaseAssetNamePattern: Douyin-Writing-Skills_[version]_macOS_universal[ext]
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          assetNamePattern: Douyin-Writing-Skills_[version]_macOS_universal[ext]
+          includeUpdaterJson: true
+          updaterJsonKeepUniversal: true
           updaterJsonPreferNsis: true
   windows:
     needs: macos-universal
@@ -59,8 +52,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: desktop
           tagName: app-v__VERSION__
@@ -68,7 +59,6 @@ jobs:
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
-          releaseAssetNamePattern: Douyin-Writing-Skills_[version]_windows_x64[_setup][ext]
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          assetNamePattern: Douyin-Writing-Skills_[version]_windows_x64[_setup][ext]
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true

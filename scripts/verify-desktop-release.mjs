@@ -17,6 +17,6 @@ if (tauriConfig.bundle.createUpdaterArtifacts !== true) fail("createUpdaterArtif
 const updater = tauriConfig.plugins?.updater
 if (!updater?.pubkey || updater.pubkey.includes("/") || !updater.endpoints?.every((url) => url.startsWith("https://"))) fail("updater requires a public key and HTTPS endpoint")
 if (!updater.endpoints.includes("https://github.com/youfei0719/still-settling-workbench/releases/latest/download/latest.json")) fail("updater endpoint is incorrect")
-for (const expected of ["app-v*", "contents: write", "tauri-apps/tauri-action@v0", "uploadUpdaterJson: true", "uploadUpdaterSignatures: true", "updaterJsonPreferNsis: true", "Douyin-Writing-Skills_[version]_macOS_universal[ext]", "Douyin-Writing-Skills_[version]_windows_x64[_setup][ext]"]) if (!workflow.includes(expected)) fail(`workflow is missing ${expected}`)
+for (const expected of ["app-v*", "contents: write", "tauri-apps/tauri-action@v0", "assetNamePattern:", "includeUpdaterJson: true", "updaterJsonKeepUniversal: true", "updaterJsonPreferNsis: true", "Douyin-Writing-Skills_[version]_macOS_universal[ext]", "Douyin-Writing-Skills_[version]_windows_x64[_setup][ext]"]) if (!workflow.includes(expected)) fail(`workflow is missing ${expected}`)
 if (process.exitCode) process.exit(process.exitCode)
 console.log(`desktop release configuration verified for ${packageJson.version}`)
