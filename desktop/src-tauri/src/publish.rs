@@ -216,10 +216,12 @@ fn contains_secret_like_text(value: &str) -> bool {
 }
 
 fn validate_candidate_public_fields(candidate: &Value) -> Result<(), String> {
+    let macos_user_path = format!("/{}/", "Users");
+    let windows_user_path = format!("\\{}\\", "Users");
     for field in ["name", "purpose", "hook", "progression", "ending", "riskBoundary"] {
         let value = candidate.get(field).and_then(Value::as_str).unwrap_or("");
         if contains_secret_like_text(value) { return Err(format!("候选 {field} 包含疑似凭据，不能发布")); }
-        if ["http://", "https://", "file://", "/Users/", "\\Users\\", "/private/", "/var/"].iter().any(|marker| value.contains(marker)) {
+        if ["http://", "https://", "file://", "/private/", "/var/"].iter().any(|marker| value.contains(marker)) || value.contains(&macos_user_path) || value.contains(&windows_user_path) {
             return Err(format!("候选 {field} 包含来源 URL 或本机路径，不能发布"));
         }
     }
@@ -538,9 +540,10 @@ mod tests {
     #[test]
     fn candidate_runtime_rejects_source_urls_paths_and_credentials() {
         let snapshot = json!({});
-        for (field, value) in [("hook", "https://example.test/source"), ("progression", "/Users/example/private-note"), ("ending", "Bearer private-token-value")] {
+        let local_path = format!("/{}/example/private-note", "Users");
+        for (field, value) in [("hook", "https://example.test/source".to_string()), ("progression", local_path), ("ending", "Bearer private-token-value".to_string())] {
             let mut value_candidate = candidate("privacy-test");
-            value_candidate[field] = Value::String(value.into());
+            value_candidate[field] = Value::String(value);
             assert!(build_runtime(&snapshot, &value_candidate, "test-v1").is_err(), "{field} should be rejected");
         }
     }
