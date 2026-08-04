@@ -33,8 +33,10 @@ if (compare(next, packageJson.version) <= 0) throw new Error("新版本必须大
 if (output("git", ["tag", "-l", `app-v${next}`])) throw new Error(`标签 app-v${next} 已存在`)
 const tauriPath = resolve(root, "desktop/src-tauri/tauri.conf.json")
 const cargoPath = resolve(root, "desktop/src-tauri/Cargo.toml")
+const cargoLockPath = resolve(root, "desktop/src-tauri/Cargo.lock")
 const tauriSource = readFileSync(tauriPath, "utf8")
 const cargoSource = readFileSync(cargoPath, "utf8")
+const cargoLockSource = readFileSync(cargoLockPath, "utf8")
 
 try {
   packageJson.version = next
@@ -59,6 +61,7 @@ try {
   writeFileSync(packagePath, packageSource)
   writeFileSync(tauriPath, tauriSource)
   writeFileSync(cargoPath, cargoSource)
+  writeFileSync(cargoLockPath, cargoLockSource)
   throw error
 }
 run("git", ["add", "--", "desktop/package.json", "desktop/package-lock.json", "desktop/src-tauri/Cargo.toml", "desktop/src-tauri/Cargo.lock", "desktop/src-tauri/tauri.conf.json"])

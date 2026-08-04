@@ -3617,7 +3617,7 @@ def publish_codex_skill_pack_to_github(
                     sys.executable,
                     "-B",
                     "scripts/sync_from_workbench.py",
-                    pack_path.as_uri(),
+                    str(pack_path),
                 ],
                 cwd=repo,
                 timeout=90,
