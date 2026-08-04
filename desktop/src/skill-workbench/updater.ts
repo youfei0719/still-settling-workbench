@@ -14,6 +14,8 @@ export type AvailableUpdate = {
   install: (onProgress: (progress: UpdateProgress) => void) => Promise<void>
 }
 
+type NativeUpdateInfo = Omit<AvailableUpdate, "install">
+
 export interface UpdaterAdapter {
   supported: boolean
   getVersion: () => Promise<string | null>
@@ -96,19 +98,24 @@ export function nativeUpdaterAdapter(): UpdaterAdapter {
       return getVersion()
     },
     async check() {
-      const { check } = await import("@tauri-apps/plugin-updater")
-      const update = await check()
+      const { invoke } = await import("@tauri-apps/api/core")
+      const update = await invoke<NativeUpdateInfo | null>("check_desktop_update")
       if (!update) return null
       return {
         version: update.version,
-        date: update.date ?? null,
-        notes: update.body ?? null,
+        date: update.date,
+        notes: update.notes,
         async install(onProgress) {
-          let progress: UpdateProgress = { downloaded: 0, total: null, stage: "正在准备更新" }
-          await update.downloadAndInstall((event) => {
-            progress = nativeProgress(event, progress)
-            onProgress(progress)
-          })
+          const [{ invoke }, { listen }] = await Promise.all([
+            import("@tauri-apps/api/core"),
+            import("@tauri-apps/api/event"),
+          ])
+          const unlisten = await listen<UpdateProgress>("desktop-update-progress", (event) => onProgress(event.payload))
+          try {
+            await invoke("install_desktop_update")
+          } finally {
+            unlisten()
+          }
         },
       }
     },
@@ -158,6 +165,12 @@ export function useDesktopUpdater(adapter = defaultUpdaterAdapter()): DesktopUpd
       checking.current = false
     }
   }, [activeAdapter, state.update])
+
+  useEffect(() => {
+    if (!activeAdapter.supported) return
+    const timer = window.setTimeout(() => void checkForUpdates(), 1200)
+    return () => window.clearTimeout(timer)
+  }, [activeAdapter, checkForUpdates])
 
   return useMemo(() => ({ ...state, checkForUpdates, installUpdate }), [state, checkForUpdates, installUpdate])
 }

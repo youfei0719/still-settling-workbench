@@ -12,11 +12,112 @@ use db::DesktopDb;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager, State};
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_updater::{Update, Updater, UpdaterBuilder, UpdaterExt};
 use uuid::Uuid;
 
 fn command_error(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopUpdateInfo {
+    version: String,
+    date: Option<String>,
+    notes: Option<String>,
+}
+
+fn configured_desktop_updater(app: &AppHandle, db: &DesktopDb) -> Result<(Updater, String), String> {
+    let settings = settings::load_settings(db)?;
+    let route = settings::proxy_route(&settings)?;
+    let mut builder: UpdaterBuilder = app.updater_builder().timeout(Duration::from_secs(30));
+    let route_source = route
+        .as_ref()
+        .map(|value| value.source.to_string())
+        .unwrap_or_else(|| "直连".to_string());
+    if let Some(route) = route {
+        let proxy = url::Url::parse(&route.url).map_err(|error| format!("更新代理地址无效：{error}"))?;
+        builder = builder.proxy(proxy);
+    }
+    Ok((builder.build().map_err(command_error)?, route_source))
+}
+
+fn desktop_update_info(update: Update) -> DesktopUpdateInfo {
+    DesktopUpdateInfo {
+        version: update.version,
+        date: update.date.map(|value| value.to_string()),
+        notes: update.body,
+    }
+}
+
+#[tauri::command]
+async fn check_desktop_update(app: AppHandle, db: State<'_, DesktopDb>) -> Result<Option<DesktopUpdateInfo>, String> {
+    let trace_id = format!("updater-check-{}", Uuid::new_v4());
+    let (updater, route_source) = configured_desktop_updater(&app, &db)?;
+    match updater.check().await {
+        Ok(update) => {
+            let _ = audit::record(
+                &db,
+                &trace_id,
+                "desktop.updater",
+                "check",
+                "success",
+                "UPDATER_CHECK_COMPLETED",
+                if update.is_some() { "检测到桌面端更新" } else { "桌面端已是最新版本" },
+                "lib.rs:check_desktop_update",
+                Some(&format!("更新检查通过；网络：{route_source}")),
+            );
+            Ok(update.map(desktop_update_info))
+        }
+        Err(error) => {
+            let detail = error.to_string();
+            let _ = audit::record(&db, &trace_id, "desktop.updater", "check", "error", "UPDATER_CHECK_FAILED", "桌面端检查更新失败", "lib.rs:check_desktop_update", Some(&detail));
+            Err(format!("无法连接更新服务，请检查网络或代理后重试：{detail}"))
+        }
+    }
+}
+
+#[tauri::command]
+async fn install_desktop_update(app: AppHandle, db: State<'_, DesktopDb>) -> Result<(), String> {
+    let trace_id = format!("updater-install-{}", Uuid::new_v4());
+    let (updater, route_source) = configured_desktop_updater(&app, &db)?;
+    let Some(update) = updater.check().await.map_err(command_error)? else {
+        return Err("没有可安装的新版本，请重新检查更新。".to_string());
+    };
+    let mut downloaded = 0usize;
+    let progress_app = app.clone();
+    let result = update
+        .download_and_install(
+            move |chunk, total| {
+                downloaded += chunk;
+                let _ = progress_app.emit("desktop-update-progress", json!({
+                    "downloaded": downloaded,
+                    "total": total,
+                    "stage": "正在下载并验证更新包",
+                }));
+            },
+            || {
+                let _ = app.emit("desktop-update-progress", json!({
+                    "downloaded": downloaded,
+                    "total": downloaded,
+                    "stage": "下载完成，正在安装",
+                }));
+            },
+        )
+        .await;
+    match result {
+        Ok(()) => {
+            let _ = audit::record(&db, &trace_id, "desktop.updater", "install", "success", "UPDATER_INSTALL_COMPLETED", "桌面端更新包已验证并安装", "lib.rs:install_desktop_update", Some(&format!("已完成签名校验；网络：{route_source}")));
+            Ok(())
+        }
+        Err(error) => {
+            let detail = error.to_string();
+            let _ = audit::record(&db, &trace_id, "desktop.updater", "install", "error", "UPDATER_INSTALL_FAILED", "桌面端安装更新失败", "lib.rs:install_desktop_update", Some(&detail));
+            Err(format!("更新包下载、签名校验或安装失败：{detail}"))
+        }
+    }
 }
 
 #[tauri::command]
@@ -375,6 +476,8 @@ pub fn run() {
             update_local_settings,
             list_provider_models,
             test_model_connection,
+            check_desktop_update,
+            install_desktop_update,
             process_media_source,
             proofread_transcript,
             analyze_transcript,
