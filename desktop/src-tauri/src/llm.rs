@@ -3,8 +3,8 @@ use crate::db::DesktopDb;
 use crate::settings::{api_client, load_settings, read_secret};
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{json, Value};
-use tokio::time::{sleep, Duration};
+use serde_json::{Value, json};
+use tokio::time::{Duration, sleep};
 
 const TRANSIENT_MODEL_RETRIES: u8 = 2;
 
@@ -30,11 +30,48 @@ fn endpoint(base: &str, path: &str) -> String {
     )
 }
 
+fn text_from_part(value: &Value) -> Option<&str> {
+    value.as_str().or_else(|| {
+        value
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| value.pointer("/text/value").and_then(Value::as_str))
+            .or_else(|| value.get("value").and_then(Value::as_str))
+    })
+}
+
+fn text_from_content(value: &Value) -> Option<String> {
+    match value {
+        Value::String(content) => Some(content.to_string()),
+        Value::Array(parts) => {
+            let content = parts
+                .iter()
+                .filter_map(text_from_part)
+                .collect::<Vec<_>>()
+                .join("");
+            (!content.trim().is_empty()).then_some(content)
+        }
+        Value::Object(_) => text_from_part(value).map(ToOwned::to_owned),
+        _ => None,
+    }
+}
+
 fn json_content(value: &Value) -> Result<String, String> {
     let content = value
         .pointer("/choices/0/message/content")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "模型没有返回可解析的文本内容".to_string())?;
+        .and_then(text_from_content)
+        .or_else(|| value.pointer("/choices/0/text").and_then(text_from_content))
+        .or_else(|| value.get("output_text").and_then(text_from_content))
+        .or_else(|| {
+            value
+                .get("output")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|item| item.get("content").and_then(text_from_content))
+                .next()
+        })
+        .ok_or_else(|| "模型没有返回可解析的文本内容（兼容响应中未找到文本字段）".to_string())?;
     let trimmed = content.trim();
     if let Some(rest) = trimmed.strip_prefix("```json") {
         return Ok(rest.trim().trim_end_matches("```").trim().to_string());
@@ -45,13 +82,37 @@ fn json_content(value: &Value) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-fn is_transient_model_status(status: reqwest::StatusCode) -> bool {
-    matches!(status, reqwest::StatusCode::TOO_MANY_REQUESTS | reqwest::StatusCode::BAD_GATEWAY | reqwest::StatusCode::SERVICE_UNAVAILABLE | reqwest::StatusCode::GATEWAY_TIMEOUT)
+fn response_error(value: &Value) -> Option<&str> {
+    value
+        .pointer("/error/message")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("error").and_then(Value::as_str))
 }
 
-async fn send_chat_request(http: &reqwest::Client, url: &str, key: &str, body: &Value) -> Result<(reqwest::StatusCode, String), String> {
+fn is_transient_model_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::TOO_MANY_REQUESTS
+            | reqwest::StatusCode::BAD_GATEWAY
+            | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | reqwest::StatusCode::GATEWAY_TIMEOUT
+    )
+}
+
+async fn send_chat_request(
+    http: &reqwest::Client,
+    url: &str,
+    key: &str,
+    body: &Value,
+) -> Result<(reqwest::StatusCode, String), String> {
     for attempt in 0..=TRANSIENT_MODEL_RETRIES {
-        let response = http.post(url).bearer_auth(key).json(body).send().await.map_err(|error| format!("模型连接失败：{error}"))?;
+        let response = http
+            .post(url)
+            .bearer_auth(key)
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| format!("模型连接失败：{error}"))?;
         let status = response.status();
         let raw = response.text().await.map_err(|error| error.to_string())?;
         if !is_transient_model_status(status) || attempt == TRANSIENT_MODEL_RETRIES {
@@ -105,12 +166,18 @@ async fn chat_json(db: &DesktopDb, system: &str, user: &str) -> Result<(Value, S
             .unwrap_or_else(|| raw.chars().take(300).collect());
         let detail = sanitize_detail(&detail);
         if is_transient_model_status(status) {
-            return Err(format!("模型服务暂时不可用（{status}），已自动重试 {} 次仍失败：{detail}", TRANSIENT_MODEL_RETRIES));
+            return Err(format!(
+                "模型服务暂时不可用（{status}），已自动重试 {} 次仍失败：{detail}",
+                TRANSIENT_MODEL_RETRIES
+            ));
         }
         return Err(format!("模型请求失败（{status}）：{detail}"));
     }
     let envelope: Value =
         serde_json::from_str(&raw).map_err(|error| format!("模型响应不是 JSON：{error}"))?;
+    if let Some(message) = response_error(&envelope) {
+        return Err(format!("模型服务返回错误：{}", sanitize_detail(message)));
+    }
     let parsed = serde_json::from_str(&json_content(&envelope)?)
         .map_err(|error| format!("模型内容不是有效 JSON：{error}"))?;
     Ok((parsed, settings.llm_model))
@@ -154,7 +221,10 @@ pub async fn analyze_transcript(db: &DesktopDb, request: AnalyzeRequest) -> Resu
     }))
 }
 
-pub async fn proofread_transcript(db: &DesktopDb, request: ProofreadRequest) -> Result<Value, String> {
+pub async fn proofread_transcript(
+    db: &DesktopDb,
+    request: ProofreadRequest,
+) -> Result<Value, String> {
     let transcript = request.transcript.trim();
     if transcript.chars().count() < 40 {
         return Err("真实稿件至少需要 40 个字才能校对".into());
@@ -174,10 +244,19 @@ pub async fn proofread_transcript(db: &DesktopDb, request: ProofreadRequest) -> 
                     let original = item.get("original").and_then(Value::as_str)?.trim();
                     let replacement = item.get("replacement").and_then(Value::as_str)?.trim();
                     let reason = item.get("reason").and_then(Value::as_str)?.trim();
-                    if original.is_empty() || replacement.is_empty() || original == replacement || reason.is_empty() {
+                    if original.is_empty()
+                        || replacement.is_empty()
+                        || original == replacement
+                        || reason.is_empty()
+                    {
                         return None;
                     }
-                    let confidence = item.get("confidence").and_then(Value::as_f64).unwrap_or(0.0).clamp(0.0, 100.0).round() as u8;
+                    let confidence = item
+                        .get("confidence")
+                        .and_then(Value::as_f64)
+                        .unwrap_or(0.0)
+                        .clamp(0.0, 100.0)
+                        .round() as u8;
                     Some(json!({
                         "id": format!("correction-{}", index + 1),
                         "original": original,
@@ -193,7 +272,14 @@ pub async fn proofread_transcript(db: &DesktopDb, request: ProofreadRequest) -> 
     let uncertainties = value
         .get("uncertainties")
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|item| !item.is_empty()).collect::<Vec<_>>())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
     Ok(json!({
         "originalTranscript": transcript,
@@ -269,7 +355,10 @@ pub async fn remediate_candidate(db: &DesktopDb, candidate: Value) -> Result<Val
     let (value, model) = chat_json(
         db,
         system,
-        &format!("请在不改变结构本意的前提下修复以下候选：\n{}", serde_json::to_string_pretty(&structure).map_err(|error| error.to_string())?),
+        &format!(
+            "请在不改变结构本意的前提下修复以下候选：\n{}",
+            serde_json::to_string_pretty(&structure).map_err(|error| error.to_string())?
+        ),
     )
     .await?;
     let changes = value
@@ -378,12 +467,38 @@ mod tests {
     }
 
     #[test]
+    fn extracts_text_from_openai_content_parts() {
+        let value = json!({"choices":[{"message":{"content":[{"type":"text","text":"{\"ok\":"},{"type":"text","text":"true}"}]}}]});
+        assert_eq!(json_content(&value).unwrap(), "{\"ok\":true}");
+    }
+
+    #[test]
+    fn extracts_text_from_responses_envelope() {
+        let value = json!({"output":[{"content":[{"type":"output_text","text":"{\"ok\":true}"}]}]});
+        assert_eq!(json_content(&value).unwrap(), "{\"ok\":true}");
+    }
+
+    #[test]
+    fn recognizes_error_envelope_returned_with_success_status() {
+        let value = json!({"error":{"message":"GROUP_DISABLED"}});
+        assert_eq!(response_error(&value), Some("GROUP_DISABLED"));
+    }
+
+    #[test]
     fn retries_only_transient_gateway_and_rate_limit_statuses() {
         assert!(is_transient_model_status(reqwest::StatusCode::BAD_GATEWAY));
-        assert!(is_transient_model_status(reqwest::StatusCode::SERVICE_UNAVAILABLE));
-        assert!(is_transient_model_status(reqwest::StatusCode::GATEWAY_TIMEOUT));
-        assert!(is_transient_model_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_transient_model_status(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(is_transient_model_status(
+            reqwest::StatusCode::GATEWAY_TIMEOUT
+        ));
+        assert!(is_transient_model_status(
+            reqwest::StatusCode::TOO_MANY_REQUESTS
+        ));
         assert!(!is_transient_model_status(reqwest::StatusCode::BAD_REQUEST));
-        assert!(!is_transient_model_status(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(!is_transient_model_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        ));
     }
 }
