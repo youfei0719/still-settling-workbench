@@ -62,6 +62,7 @@ export interface CandidateEvidence {
   id: string
   source: SourceRecord
   transcript: string
+  proofread?: TranscriptProofreadResult | null
   fingerprint: string
   addedAt: string
 }

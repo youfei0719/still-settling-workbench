@@ -45,7 +45,7 @@ function CandidateWorkspace({
     <details className="candidate-workspace">
       <summary>
         <div className="asset-status"><AlertCircle size={15} /><span>{statusCopy[candidate.status]}</span></div>
-        <div><h3>{candidate.name}</h3><p>{candidate.purpose}</p><small>{candidate.sourceCount} 条已授权真实稿件 · 点击查看质量记录</small></div>
+        <div><h3>{candidate.name}</h3><p>{candidate.purpose}</p><small>{candidate.sourceCount} 条已授权真实稿件 · 点击查看文稿与质量记录</small></div>
         <div className="candidate-gate-summary"><span className={gates.sources ? "is-done" : ""}>来源</span><span className={gates.model ? "is-done" : ""}>模型</span><span className={gates.human ? "is-done" : ""}>主审</span></div>
         <time>{new Date(candidate.updatedAt).toLocaleString("zh-CN")}</time>
       </summary>
@@ -58,7 +58,17 @@ function CandidateWorkspace({
 
         <section className="evidence-section">
           <header><div><h4>沉淀来源</h4><p>每个 Skill 可由一条已授权真实稿件独立沉淀；额外稿件仅用于后续迭代。</p></div></header>
-          <div className="evidence-list">{candidate.sources.map((evidence, index) => <div key={evidence.id}><strong>{index + 1}. {evidence.source.label}</strong><span>{evidence.source.mode === "verified_transcript" ? "授权稿件" : evidence.source.mode === "local_media" ? "本机媒体" : "抖音来源"}</span><code>{evidence.fingerprint}</code></div>)}</div>
+          <div className="evidence-list">{candidate.sources.map((evidence, index) => <details key={evidence.id} className="evidence-record">
+            <summary><strong>{index + 1}. {evidence.source.label}</strong><span>{evidence.source.mode === "verified_transcript" ? "授权稿件" : evidence.source.mode === "local_media" ? "本机媒体" : "抖音来源"}</span><code>{evidence.fingerprint}</code></summary>
+            <div className="evidence-transcript-detail">
+              <section><header><FileText size={15} /><div><h5>提取视频文稿</h5><p>{evidence.proofread ? "AI 校对前的原始提取稿，仅保留在本机证据库。" : "历史记录未保存校对前版本，以下为已确认的本机稿件。"}</p></div></header><pre>{evidence.proofread?.originalTranscript ?? evidence.transcript}</pre></section>
+              <section><header><CheckCircle2 size={15} /><div><h5>确认后的文稿</h5><p>这份稿件是结构拆解的唯一输入，不会进入 stable 发布包。</p></div></header><pre>{evidence.transcript}</pre></section>
+              {evidence.proofread ? <section><header><ShieldCheck size={15} /><div><h5>错别字与语义校对</h5><p>{evidence.proofread.provider} · {evidence.proofread.corrections.length ? `已记录 ${evidence.proofread.corrections.length} 处建议修改` : "未发现需要逐项确认的修改"}</p></div></header>
+                {evidence.proofread.corrections.length ? <div className="correction-list">{evidence.proofread.corrections.map((item) => <article key={item.id}><div className="correction-diff"><del>{item.original}</del><span>→</span><ins>{item.replacement}</ins></div><p>{item.reason} <b>{item.confidence}%</b></p></article>)}</div> : null}
+                {evidence.proofread.uncertainties.length ? <div className="uncertainty-list"><strong>仍需人工确认</strong>{evidence.proofread.uncertainties.map((item, uncertaintyIndex) => <p key={`${item}-${uncertaintyIndex}`}>{item}</p>)}</div> : null}
+              </section> : null}
+            </div>
+          </details>)}</div>
         </section>
 
         {gates.sources ? (

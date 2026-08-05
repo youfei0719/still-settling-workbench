@@ -58,6 +58,7 @@ function legacyEvidence(candidate: Partial<LocalCandidate>, session: Partial<Dep
     id: `evidence-legacy-${candidate.id ?? Date.now()}`,
     source: normalizedSource,
     transcript: session.transcript ?? "",
+    proofread: session.proofread ?? null,
     fingerprint: `legacy-${candidate.id ?? Date.now()}`,
     addedAt: candidate.updatedAt ?? new Date().toISOString(),
   }]
@@ -79,7 +80,12 @@ function normalizeState(value: Partial<PersistedWorkbenchState>): PersistedWorkb
   } as DepositSession
   const candidates = (value.candidates ?? []).map((candidate) => {
     const partial = candidate as Partial<LocalCandidate> & { status?: string }
-    const sources = partial.sources?.length ? partial.sources : legacyEvidence(partial, session)
+    const sources = (partial.sources?.length ? partial.sources : legacyEvidence(partial, session)).map((evidence) => ({
+      ...evidence,
+      // Older candidates retained the confirmed transcript but not the review record.
+      // It is safe to recover only the current session's matching source.
+      proofread: evidence.proofread ?? (evidence.source.id === session.source?.id ? session.proofread : null),
+    }))
     return {
       ...partial,
       sources,

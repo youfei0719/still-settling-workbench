@@ -381,7 +381,26 @@ async fn preflight(repository: &Path, sync_mode: &str, remote: &str, branch: &st
         command_output("git", &["remote".into(), "get-url".into(), remote.into()], Some(repository)).await?;
         command_output("git", &["fetch".into(), "--prune".into(), remote.into()], Some(repository)).await?;
         let upstream = format!("{remote}/{branch}");
-        if command_output("git", &["rev-parse".into(), "--verify".into(), upstream.clone()], Some(repository)).await.is_ok() { command_output("git", &["merge".into(), "--ff-only".into(), upstream], Some(repository)).await?; }
+        if command_output("git", &["rev-parse".into(), "--verify".into(), upstream.clone()], Some(repository)).await.is_ok() {
+            let counts = command_output("git", &["rev-list".into(), "--left-right".into(), "--count".into(), format!("HEAD...{upstream}")], Some(repository)).await?;
+            let mut counts = counts.split_whitespace();
+            let ahead = counts.next().and_then(|value| value.parse::<usize>().ok()).ok_or_else(|| "无法读取本机与远端分支关系".to_string())?;
+            let behind = counts.next().and_then(|value| value.parse::<usize>().ok()).ok_or_else(|| "无法读取本机与远端分支关系".to_string())?;
+            match (ahead, behind) {
+                (0, 0) | (_, 0) => {}
+                (0, _) => {
+                    command_output("git", &["merge".into(), "--ff-only".into(), upstream], Some(repository)).await?;
+                }
+                _ => {
+                    let local_subjects = command_output("git", &["log".into(), "--format=%s".into(), format!("{upstream}..HEAD")], Some(repository)).await?;
+                    let generated_only = local_subjects.lines().all(|subject| subject.starts_with("publish writing skills ") || subject == "Initialize fixed Skill loader");
+                    if !generated_only {
+                        return Err("发布仓库与远端分叉，且包含未识别的本地提交。为保护你的提交，未自动改写历史；请先手动同步该仓库后重试。".into());
+                    }
+                    command_output("git", &["rebase".into(), upstream], Some(repository)).await.map_err(|error| format!("自动同步应用生成的发布提交失败：{error}\n已保留本地提交；请解决冲突后重试。"))?;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -575,6 +594,43 @@ mod tests {
         let _second = publish_candidate_with_progress(None, &db, "B").await.unwrap(); let snapshot=load_stable_repository_snapshot(&repo,true,"","main").unwrap(); assert_eq!(snapshot["skills"].as_array().unwrap().len(),2); assert!(repo.join(format!("published/packages/{version_a}/runtime/references/skills/A.md")).is_file());
         let updated = candidate("A"); let state = json!({"session":{"stage":"awaiting_source","source":null,"transcript":"","transcriptQuality":"unavailable","draft":null,"events":[]},"candidates":[updated,candidate("B")]}); db.save_skill_workbench_state(&state).unwrap();
         let third = publish_candidate_with_progress(None, &db, "A").await.unwrap(); assert_ne!(third["version"], first["version"]); assert_eq!(load_stable_repository_snapshot(&repo,true,"","main").unwrap()["skills"].as_array().unwrap().len(),2);
+    }
+
+    #[tokio::test]
+    async fn preflight_rebases_generated_publish_commit_after_remote_advances() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("skills");
+        let remote = temp.path().join("remote.git");
+        command_output("git", &["init".into(), "-b".into(), "main".into(), repo.to_string_lossy().into_owned()], None).await.unwrap();
+        command_output("git", &["config".into(), "user.name".into(), "test".into()], Some(&repo)).await.unwrap();
+        command_output("git", &["config".into(), "user.email".into(), "test@example.com".into()], Some(&repo)).await.unwrap();
+        fs::write(repo.join("base.txt"), "base\n").unwrap();
+        command_output("git", &["add".into(), "base.txt".into()], Some(&repo)).await.unwrap();
+        command_output("git", &["commit".into(), "-m".into(), "base".into()], Some(&repo)).await.unwrap();
+        command_output("git", &["init".into(), "--bare".into(), remote.to_string_lossy().into_owned()], None).await.unwrap();
+        command_output("git", &["remote".into(), "add".into(), "origin".into(), remote.to_string_lossy().into_owned()], Some(&repo)).await.unwrap();
+        command_output("git", &["push".into(), "-u".into(), "origin".into(), "main".into()], Some(&repo)).await.unwrap();
+        seed_loader(&repo, "local", "", "main").unwrap();
+        command_output("git", &["add".into(), "SKILL.md".into(), "skill-source.json".into(), "scripts".into()], Some(&repo)).await.unwrap();
+        command_output("git", &["commit".into(), "-m".into(), "Initialize fixed Skill loader".into()], Some(&repo)).await.unwrap();
+
+        let writer = temp.path().join("writer");
+        command_output("git", &["clone".into(), remote.to_string_lossy().into_owned(), writer.to_string_lossy().into_owned()], None).await.unwrap();
+        command_output("git", &["config".into(), "user.name".into(), "writer".into()], Some(&writer)).await.unwrap();
+        command_output("git", &["config".into(), "user.email".into(), "writer@example.com".into()], Some(&writer)).await.unwrap();
+        fs::write(writer.join("remote.txt"), "remote\n").unwrap();
+        command_output("git", &["add".into(), "remote.txt".into()], Some(&writer)).await.unwrap();
+        command_output("git", &["commit".into(), "-m".into(), "remote update".into()], Some(&writer)).await.unwrap();
+        command_output("git", &["push".into(), "origin".into(), "main".into()], Some(&writer)).await.unwrap();
+
+        fs::write(repo.join("published.txt"), "publish\n").unwrap();
+        command_output("git", &["add".into(), "published.txt".into()], Some(&repo)).await.unwrap();
+        command_output("git", &["commit".into(), "-m".into(), "publish writing skills wb-test".into()], Some(&repo)).await.unwrap();
+        preflight(&repo, "github", "origin", "main").await.unwrap();
+
+        assert!(repo.join("remote.txt").is_file());
+        assert!(repo.join("published.txt").is_file());
+        assert_eq!(command_output("git", &["log".into(), "-1".into(), "--format=%s".into()], Some(&repo)).await.unwrap(), "publish writing skills wb-test");
     }
 
     #[tokio::test]

@@ -77,6 +77,7 @@ function evidenceFromSession(session: DepositSession): CandidateEvidence | null 
     id: uniqueId("evidence"),
     source: session.source,
     transcript: session.transcript,
+    proofread: session.proofread,
     fingerprint: evidenceFingerprint(session.source, session.transcript),
     addedAt: new Date().toISOString(),
   }

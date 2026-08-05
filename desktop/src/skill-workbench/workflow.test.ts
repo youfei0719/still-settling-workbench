@@ -45,12 +45,21 @@ describe("Skill 沉淀状态机", () => {
   })
 
   it("单条授权真实稿件即可保存并进入评测", () => {
-    const first = saveCandidateFromSession(structuredSession(1))
+    const session = structuredSession(1)
+    session.proofread = {
+      originalTranscript: "原始转写稿",
+      formattedTranscript: session.transcript,
+      corrections: [{ id: "correction-1", original: "错别字", replacement: "正确字", reason: "纠正识别错误", confidence: 96, status: "accepted" }],
+      uncertainties: ["专有名词需人工确认"],
+      provider: "test-model",
+    }
+    const first = saveCandidateFromSession(session)
     expect(first.ok).toBe(true)
     if (!first.ok) return
     expect(first.candidate.sourceCount).toBe(1)
     expect(first.candidate.status).toBe("review_ready")
     expect(candidateGates(first.candidate).sources).toBe(true)
+    expect(first.candidate.sources[0].proofread?.corrections).toHaveLength(1)
   })
 
   it("未经校对确认的转写不能进入结构拆解", () => {
