@@ -853,7 +853,21 @@ def test_skill_governance_rejects_illegal_lifecycle_transitions() -> None:
 def test_publisher_builds_and_pushes_only_a_versioned_runtime(tmp_path, monkeypatch) -> None:
     skill_source = Path(__file__).resolve().parents[3] / "douyin-writing-skills"
     distribution = tmp_path / "douyin-writing-skills"
-    shutil.copytree(skill_source, distribution, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    # The publisher test needs source-controlled runtime files, not local build caches.
+    shutil.copytree(
+        skill_source,
+        distribution,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            "__pycache__",
+            ".pytest_cache",
+            "node_modules",
+            "target",
+            "dist",
+            "test-results",
+            "playwright-report",
+        ),
+    )
     subprocess.run(["git", "init", "-b", "main"], cwd=distribution, check=True, capture_output=True)
     subprocess.run(["git", "add", "."], cwd=distribution, check=True, capture_output=True)
     subprocess.run(
