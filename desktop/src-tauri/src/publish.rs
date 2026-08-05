@@ -1,6 +1,6 @@
 use crate::db::DesktopDb;
 use crate::executable::require_executable;
-use crate::settings::{load_settings, save_settings};
+use crate::settings::{api_client, load_settings, save_settings, WorkbenchSettings};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -405,11 +405,10 @@ async fn preflight(repository: &Path, sync_mode: &str, remote: &str, branch: &st
     Ok(())
 }
 
-async fn verify_public_github_runtime(source: &Value, commit: &str, version: &str) -> Result<(), String> {
+async fn verify_public_github_runtime(source: &Value, commit: &str, version: &str, client: &reqwest::Client) -> Result<(), String> {
     let owner = source.get("owner").and_then(Value::as_str).ok_or_else(|| "GitHub 来源缺少 owner".to_string())?;
     let repository = source.get("repository").and_then(Value::as_str).ok_or_else(|| "GitHub 来源缺少 repository".to_string())?;
     let base = format!("https://raw.githubusercontent.com/{owner}/{repository}/{commit}");
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build().map_err(|error| error.to_string())?;
     let response = client.get(format!("{base}/published/stable/manifest.json")).send().await.map_err(|error| format!("无法读取 GitHub Raw stable manifest：{error}"))?;
     if !response.status().is_success() { return Err(format!("GitHub Raw stable manifest 返回 HTTP {}", response.status())); }
     let manifest: Value = serde_json::from_slice(&response.bytes().await.map_err(|error| error.to_string())?).map_err(|_| "GitHub Raw stable manifest 不是有效 JSON".to_string())?;
@@ -427,10 +426,10 @@ async fn verify_public_github_runtime(source: &Value, commit: &str, version: &st
     Ok(())
 }
 
-async fn github_repository_is_public(source: &Value) -> Result<bool, String> {
+async fn github_repository_is_public(source: &Value, client: &reqwest::Client) -> Result<bool, String> {
     let owner = source.get("owner").and_then(Value::as_str).ok_or_else(|| "GitHub 来源缺少 owner".to_string())?;
     let repository = source.get("repository").and_then(Value::as_str).ok_or_else(|| "GitHub 来源缺少 repository".to_string())?;
-    let response = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().map_err(|error| error.to_string())?
+    let response = client
         .get(format!("https://api.github.com/repos/{owner}/{repository}"))
         .header("User-Agent", "douyin-writing-skills-desktop")
         .send().await.map_err(|error| format!("无法确认 GitHub 仓库可见性：{error}"))?;
@@ -461,21 +460,22 @@ async fn verify_clean_clone_and_loader(repository: &Path, remote_url: &str, bran
     result
 }
 
-async fn verify_remote_runtime(repository: &Path, job: &Value, commit: &str) -> Result<(), String> {
+async fn verify_remote_runtime(repository: &Path, job: &Value, commit: &str, settings: &WorkbenchSettings) -> Result<(), String> {
     let remote_url = job.get("remoteUrl").and_then(Value::as_str).unwrap_or("");
     let branch = job.get("branch").and_then(Value::as_str).unwrap_or("main");
     let version = job.get("version").and_then(Value::as_str).ok_or_else(|| "发布任务缺少版本号".to_string())?;
+    let (client, _) = api_client(settings, 20)?;
     // Public GitHub receives an independent exact-SHA Raw check. Private repositories
     // use the authenticated clean-clone path below when Raw is unavailable.
     if let Some(source) = github_source(remote_url, branch) {
-        if github_repository_is_public(&source).await? {
-            verify_public_github_runtime(&source, commit, version).await?;
+        if github_repository_is_public(&source, &client).await? {
+            verify_public_github_runtime(&source, commit, version, &client).await?;
         }
     }
     verify_clean_clone_and_loader(repository, remote_url, branch, commit, version).await
 }
 
-async fn commit_and_push(app: Option<&AppHandle>, repository: &Path, job: &mut Value, sync_mode: &str) -> Result<(), String> {
+async fn commit_and_push(app: Option<&AppHandle>, repository: &Path, job: &mut Value, sync_mode: &str, settings: &WorkbenchSettings) -> Result<(), String> {
     let version = job["version"].as_str().unwrap_or_default().to_string();
     emit_progress(app, "committing", "正在提交不可变发布包"); job_stage(job, "committing", "running");
     let add = vec!["add".into(), "--".into(), format!("published/packages/{version}"), "published/stable/manifest.json".into()];
@@ -491,7 +491,7 @@ async fn commit_and_push(app: Option<&AppHandle>, repository: &Path, job: &mut V
     emit_progress(app, "verifying", "正在验证远端 commit 与 stable manifest"); job_stage(job, "verifying", "running");
     let remote_sha = command_output("git", &["ls-remote".into(), remote, format!("refs/heads/{branch}")], Some(repository)).await?.split_whitespace().next().unwrap_or_default().to_string();
     if remote_sha != commit { return Err("Git push 后远端分支未指向本地发布 commit".into()); }
-    verify_remote_runtime(repository, job, &commit).await?;
+    verify_remote_runtime(repository, job, &commit, settings).await?;
     job["remoteVerifiedAt"] = Value::String(Utc::now().to_rfc3339());
     if let Some(source) = github_source(job["remoteUrl"].as_str().unwrap_or(""), &branch) {
         job["commitUrl"] = Value::String(format!("https://github.com/{}/{}/commit/{commit}", source["owner"].as_str().unwrap_or_default(), source["repository"].as_str().unwrap_or_default()));
@@ -532,7 +532,7 @@ pub async fn publish_candidate_with_progress(app: Option<&AppHandle>, db: &Deskt
         emit_progress(app, "validating", "正在校验完整 stable runtime"); job_stage(&mut job, "validating", "running"); db.save_publish_job(&job).map_err(|error| error.to_string())?;
         let checked = load_stable_repository_snapshot(&repository, true, &settings.skill_remote_url, &settings.skill_branch)?;
         if checked.get("skills").and_then(Value::as_array).map(|skills| skills.len()) != Some(active_count) { return Err("发布后 Skill 数量校验失败".into()); }
-        commit_and_push(app, &repository, &mut job, &settings.skill_sync_mode).await?;
+        commit_and_push(app, &repository, &mut job, &settings.skill_sync_mode, &settings).await?;
         let manifest_path = job.get("manifestPath").and_then(Value::as_str).ok_or_else(|| "发布任务缺少 stable manifest 路径".to_string())?;
         db.mark_candidate_released(candidate_id, &version, manifest_path).map_err(|error| error.to_string())?;
         job_stage(&mut job, "succeeded", "succeeded"); job["finishedAt"] = Value::String(Utc::now().to_rfc3339()); db.save_publish_job(&job).map_err(|error| error.to_string())?;
