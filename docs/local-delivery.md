@@ -1,30 +1,22 @@
-# 依旧沉淀 v1 本机交付说明
+# 依旧沉淀本机交付说明
+
+> 本文件是部署与运行操作手册，不描述产品方向。当前产品事实来源是 [product-baseline.md](product-baseline.md)；历史 v1 验收规则见 [final-acceptance.md](final-acceptance.md) 归档一节。
 
 ## 交付定位
 
 这是一个本机/内网使用的内部 AI 内容生产工作台，不是公网 SaaS，也不是营销 landing page。
 
-v1 只交付一条生产闭环：
+当前产品包含两个闭环（详见 product-baseline.md）：
 
 ```text
-抖音链接/上传输入
--> 视频、字幕或文案提取
--> 脚本结构分析
--> 模板资产沉淀
--> 热点反推脚本
--> 风控检查
--> Markdown/JSON 导出
+A. 日常创作闭环（主）：
+选题 -> 研究 -> 角度 -> 素材 -> 结构 -> 完整成稿 -> 审稿 -> 导出
+
+B. 能力沉淀闭环（Skill 工厂）：
+授权来源 -> 真实稿件 -> 结构分析 -> 人工判断 -> 结构资产 / 参考稿 -> 必要时发布 Codex Skill
 ```
 
-主界面固定为五个页面：
-
-1. 链接分析台
-2. 分析工作区
-3. 模板资产库
-4. 热点反推室
-5. 审核导出
-
-“审核导出”页包含 v1 外部门禁面板，用来跟踪真实抖音链接、真实 LLM 和人工质量复核三项最终验收状态。
+> 历史 v1（归档）：五页信息架构为 链接分析台 / 分析工作区 / 模板资产库 / 热点反推室 / 审核导出，主链路为 链接输入 -> 提取 -> 结构分析 -> 模板沉淀 -> 热点反推 -> 风控 -> 导出。“审核导出”页的 v1 外部门禁面板（真实抖音链接、真实 LLM、人工质量复核）继续保留，但已归入系统诊断 / Skill 工厂高级能力。
 
 ## 明确不做
 
@@ -125,6 +117,12 @@ uv run python scripts/verify_workbench_persistence.py --mode configured --migrat
 | `WORKBENCH_TRANSCRIPTION_MODEL` / `WORKBENCH_TRANSCRIPTION_API_KEY` | 外部语音转写模型与凭据；不能使用仅文本的 LLM 中转站 |
 | `WORKBENCH_DB_MODE` | `auto` / `off`，默认优先 PostgreSQL |
 | `WORKBENCH_LLM_MODE` | `offline` / `optional` / `required` |
+| `WORKBENCH_LLM_TRANSPORT` | 普通调用（完整成稿、结构推荐、证据复核等）的通道：`litellm`（中转）/ `codex_cli` |
+| `WORKBENCH_RESEARCH_TRANSPORT` | 联网研究专用通道，默认沿用 `WORKBENCH_LLM_TRANSPORT`；必须使用能真正执行 Web 检索的通道（`codex_cli`） |
+| `WORKBENCH_CODEX_AUTH_MODE` | Codex 通道鉴权：`api_key`（用中转 Key） / `local_codex`（复用本机 `~/.codex/auth.json` 登录态） |
+| `WORKBENCH_RESEARCH_CODEX_AUTH_MODE` | 联网研究专用的 Codex 鉴权方式，默认沿用 `WORKBENCH_CODEX_AUTH_MODE` |
+| `WORKBENCH_CODEX_HOME` | `local_codex` 模式下的 Codex 主目录，默认 `~/.codex` |
+| `WORKBENCH_CODEX_MODEL` | 可选：`local_codex` 模式下指定模型名，默认使用本机 Codex 默认模型 |
 | `WORKBENCH_LLM_MODEL` | LiteLLM 模型名 |
 | `WORKBENCH_LLM_API_BASE` | OpenAI 兼容 API 或中转站地址 |
 | `WORKBENCH_LLM_API_KEY` | 模型 API Key；脚本会映射到 `OPENAI_API_KEY` |
@@ -136,6 +134,20 @@ uv run python scripts/verify_workbench_persistence.py --mode configured --migrat
 | `WORKBENCH_DOUYIN_DOWNLOADER_CMD` | 自定义 douyin-downloader 命令 |
 | `WORKBENCH_DOUYIN_PUBLIC_ATTEMPTS` | 公开链接提取的自动尝试次数，默认 `2` |
 | `WORKBENCH_DOUYIN_RETRY_DELAY_SECONDS` | 自动重试的基础等待秒数，默认 `1` |
+
+联网研究需要能**真正打开公开页面**的通道。注意：只返回文本、不产生 `web_search_call` 的中转（实测 tokenflux）不能用于研究——模型会凭记忆给出“已联网确认”的结论。推荐配置：
+
+```text
+# 普通调用（成稿等）走中转
+WORKBENCH_LLM_TRANSPORT=litellm
+WORKBENCH_LLM_MODEL=openai/gemini-3.1-pro-low
+WORKBENCH_LLM_API_BASE=https://<relay>/v1
+WORKBENCH_LLM_API_KEY=<key>
+
+# 联网研究走本机 Codex（唯一能真实检索的通道）
+WORKBENCH_RESEARCH_TRANSPORT=codex_cli
+WORKBENCH_RESEARCH_CODEX_AUTH_MODE=local_codex
+```
 
 生产工作台的公开链接提取不读取浏览器 Cookie，也不需要网页用户安装本机连接器。视频、音频仅在同一台主站服务器的临时目录处理，完成或失败后删除；长期保留的只有文稿、分析历史和 Skill。不要把 API Key 写进仓库。
 

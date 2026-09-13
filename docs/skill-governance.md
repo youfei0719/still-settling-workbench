@@ -1,4 +1,8 @@
-# 写作 Skill 治理
+# 写作 Skill 治理（Skill 工厂）
+
+> 适用范围：本文件只约束 **Skill 工厂（能力沉淀闭环）** 的资产生命周期、发布门槛与团队同步。  
+> 普通写稿不依赖本流程：Skill 是增强项，不是许可证；没有现成 Skill 时使用通用写作骨架继续创作。  
+> 产品主流程见 [product-baseline.md](product-baseline.md)。
 
 ## 生命周期
 
