@@ -18,6 +18,10 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.script_workbench import (
     DraftDiagnosis,
+    MaterialCard,
+    MaterialResearchRequest,
+    ScriptGenerationRequest,
+    StructureRecommendationRequest,
     DraftInputRequest,
     FactSource,
     FactVerification,
@@ -233,6 +237,177 @@ class StructuredFactVerificationOutput(BaseModel):
     sources: list[StructuredFactSource] = Field(default_factory=list, max_length=8)
 
 
+class StructuredResearchClaim(BaseModel):
+    """逐条事实 + 支持它的来源 URL（Phase 3 要求可追溯）。"""
+
+    claim: str = Field(min_length=6, max_length=400)
+    source_urls: list[str] = Field(default_factory=list, max_length=6)
+    confidence: str = Field(default="medium", max_length=10)
+    note: str = Field(default="", max_length=200)
+
+
+class StructuredResearchAngle(BaseModel):
+    """Phase 2：有明显区别的内容角度候选（4–8 个之一）。"""
+
+    name: str = Field(min_length=2, max_length=30)
+    thesis: str = Field(min_length=6, max_length=200)
+    why_it_works: str = Field(min_length=6, max_length=300)
+    supporting_materials: list[str] = Field(default_factory=list, max_length=6)
+    missing_materials: list[str] = Field(default_factory=list, max_length=6)
+    overlap_risk: str = Field(default="", max_length=200)
+    main_risks: list[str] = Field(default_factory=list, max_length=5)
+    # Phase 3：支撑依据按证据类型分开；事实用序号引用 verified_facts（从 1 开始）。
+    verified_fact_indexes: list[int] = Field(default_factory=list, max_length=8)
+    opinion_evidence: list[str] = Field(default_factory=list, max_length=6)
+    example_evidence: list[str] = Field(default_factory=list, max_length=6)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=6)
+
+
+class StructuredResearchOutput(BaseModel):
+    """Phase 2：联网研究简报。只做研究，不做结构匹配、不写稿。"""
+
+    summary: str = Field(min_length=8, max_length=600)
+    verified_facts: list[StructuredResearchClaim] = Field(
+        default_factory=list, max_length=10
+    )
+    uncertain_claims: list[str] = Field(default_factory=list, max_length=8)
+    opinions: list[str] = Field(default_factory=list, max_length=8)
+    controversies: list[str] = Field(default_factory=list, max_length=6)
+    audience_sentiment: str = Field(default="", max_length=300)
+    timeline: list[str] = Field(default_factory=list, max_length=10)
+    discussion_context: list[str] = Field(default_factory=list, max_length=6)
+    risk_flags: list[str] = Field(default_factory=list, max_length=8)
+    research_gap: list[str] = Field(default_factory=list, max_length=8)
+    sources: list[StructuredFactSource] = Field(default_factory=list, max_length=12)
+    angles: list[StructuredResearchAngle] = Field(default_factory=list, max_length=8)
+
+
+class StructuredMaterialCard(BaseModel):
+    """第二轮 Angle-driven Research 的素材卡。"""
+
+    type: Literal[
+        "fact",
+        "quote",
+        "opinion",
+        "case",
+        "data",
+        "background",
+        "comparison",
+    ] = "fact"
+    title: str = Field(min_length=4, max_length=120)
+    summary: str = Field(default="", max_length=300)
+    content: str = Field(min_length=8, max_length=1200)
+    source: str = Field(default="", max_length=200)
+    publisher: str = Field(default="", max_length=100)
+    published_at: Optional[str] = Field(default=None, max_length=50)
+    source_url: str = Field(default="", max_length=500)
+    verification_status: str = Field(default="uncertain", max_length=20)
+    relevance_to_angle: str = Field(default="", max_length=400)
+    suggested_usage: str = Field(default="", max_length=200)
+    risk: str = Field(default="", max_length=300)
+
+
+class StructuredMaterialResearchOutput(BaseModel):
+    materials: list[StructuredMaterialCard] = Field(
+        default_factory=list, max_length=10
+    )
+    stop_reason: str = Field(default="", max_length=300)
+    reused_existing_sources: bool = False
+
+
+class StructuredStructureMaterialMapping(BaseModel):
+    step: str = Field(min_length=2, max_length=60)
+    material_ids: list[str] = Field(default_factory=list, max_length=8)
+    note: str = Field(default="", max_length=200)
+
+
+class StructuredStructureExplanation(BaseModel):
+    structure_id: str = Field(min_length=2, max_length=80)
+    why_fits: str = Field(min_length=6, max_length=400)
+    material_mapping: list[StructuredStructureMaterialMapping] = Field(
+        default_factory=list, max_length=8
+    )
+    material_gaps: list[str] = Field(default_factory=list, max_length=6)
+    risk_notes: list[str] = Field(default_factory=list, max_length=5)
+
+
+class StructuredScriptEvidenceLink(BaseModel):
+    section: str = Field(min_length=2, max_length=60)
+    material_ids: list[str] = Field(default_factory=list, max_length=8)
+    claim_ids: list[str] = Field(default_factory=list, max_length=8)
+    note: str = Field(default="", max_length=200)
+
+
+class StructuredMaterialGap(BaseModel):
+    gap: str = Field(min_length=4, max_length=300)
+    handling: str = Field(min_length=4, max_length=300)
+
+
+class StructuredCompleteScriptOutput(BaseModel):
+    """Phase 4：完整主稿 + 证据追踪（无需联网）。
+
+    列表长度上限只用于挡住明显异常输出；字幕按句给出时本来就会较长，
+    不要因为上限过紧而把可用初稿判为失败（服务层会按需截断）。
+    """
+
+    title: str = Field(min_length=4, max_length=120)
+    title_candidates: list[str] = Field(default_factory=list, max_length=6)
+    spoken_script: str = Field(min_length=40, max_length=6000)
+    shot_suggestions: list[str] = Field(default_factory=list, max_length=20)
+    subtitle_rhythm: list[str] = Field(default_factory=list, max_length=60)
+    comment_cta: str = Field(default="", max_length=300)
+    used_material_ids: list[str] = Field(default_factory=list, max_length=40)
+    used_claim_ids: list[str] = Field(default_factory=list, max_length=40)
+    evidence_map: list[StructuredScriptEvidenceLink] = Field(
+        default_factory=list, max_length=30
+    )
+    material_gaps: list[StructuredMaterialGap] = Field(
+        default_factory=list, max_length=20
+    )
+    structure_coverage: list[str] = Field(default_factory=list, max_length=20)
+
+
+class StructuredUnsupportedClaim(BaseModel):
+    text: str = Field(min_length=4, max_length=400)
+    reason: str = Field(min_length=4, max_length=300)
+    action: str = Field(default="removed", max_length=20)
+
+
+class StructuredEvidenceRepairOutput(BaseModel):
+    revised_spoken_script: str = Field(min_length=80, max_length=4000)
+    unsupported_claims: list[StructuredUnsupportedClaim] = Field(
+        default_factory=list, max_length=10
+    )
+    material_gaps: list[StructuredMaterialGap] = Field(
+        default_factory=list, max_length=8
+    )
+    change_summary: str = Field(default="", max_length=300)
+
+
+class StructuredStructureRecommendationOutput(BaseModel):
+    explanations: list[StructuredStructureExplanation] = Field(
+        default_factory=list, max_length=3
+    )
+
+
+class ScriptGenerationCallResult(BaseModel):
+    status: LLMCallStatus
+    output: Optional[StructuredCompleteScriptOutput] = None
+    error: str = ""
+
+
+class MaterialResearchCallResult(BaseModel):
+    status: LLMCallStatus
+    output: Optional[StructuredMaterialResearchOutput] = None
+    error: str = ""
+
+
+class ResearchCallResult(BaseModel):
+    status: LLMCallStatus
+    output: Optional[StructuredResearchOutput] = None
+    error: str = ""
+
+
 class StructuredSelectionRewriteOutput(BaseModel):
     replacement: str = Field(min_length=2, max_length=1600)
     change_summary: str = Field(min_length=2, max_length=160)
@@ -402,6 +577,62 @@ def _codex_event_activity(
     return None
 
 
+def research_transport() -> str:
+    """联网研究（需要真实 Web 检索）专用通道，默认沿用主通道。"""
+    return (
+        os.getenv("WORKBENCH_RESEARCH_TRANSPORT", "").strip().lower()
+        or os.getenv("WORKBENCH_LLM_TRANSPORT", "litellm").strip().lower()
+    )
+
+
+def codex_auth_mode(allow_web_search: bool = False) -> str:
+    """Codex CLI 通道的鉴权方式。
+
+    - ``api_key``（默认）：使用工作台配置的 API Key / API Base（要求服务端支持
+      Responses API 与 ``web_search`` 工具）。
+    - ``local_codex``：复用本机 Codex 登录态（``~/.codex/auth.json``）。
+
+    联网研究与普通调用可以分别配置：只有能真正执行 Web 检索的通道才能用于研究，
+    普通生成（如完整成稿）可以走中转站。
+
+    - 研究：``WORKBENCH_RESEARCH_CODEX_AUTH_MODE`` → ``WORKBENCH_CODEX_AUTH_MODE``
+    - 普通：``WORKBENCH_CODEX_AUTH_MODE``
+    """
+    if allow_web_search:
+        mode = (
+            os.getenv("WORKBENCH_RESEARCH_CODEX_AUTH_MODE", "").strip().lower()
+            or os.getenv("WORKBENCH_CODEX_AUTH_MODE", "api_key").strip().lower()
+        )
+    else:
+        mode = os.getenv("WORKBENCH_CODEX_AUTH_MODE", "api_key").strip().lower()
+    return mode if mode in {"api_key", "local_codex"} else "api_key"
+
+
+def local_codex_model_label() -> Optional[str]:
+    """仅在调用确实走 Codex CLI + 本机登录态时，给出如实的模型标签。"""
+    transport = os.getenv("WORKBENCH_LLM_TRANSPORT", "litellm").strip().lower()
+    if transport != "codex_cli" or codex_auth_mode() != "local_codex":
+        return None
+    return os.getenv("WORKBENCH_CODEX_MODEL", "").strip() or "本机 Codex 登录态（联网）"
+
+
+def research_model_label() -> Optional[str]:
+    """联网研究通道的标签（研究与生成可能走不同通道）。"""
+    transport = research_transport()
+    if transport != "codex_cli":
+        return None
+    if codex_auth_mode(allow_web_search=True) == "local_codex":
+        return os.getenv("WORKBENCH_CODEX_MODEL", "").strip() or "本机 Codex 登录态（联网检索）"
+    return None
+
+
+def _local_codex_auth_path() -> Path:
+    codex_home = os.getenv("WORKBENCH_CODEX_HOME", "").strip() or str(
+        Path.home() / ".codex"
+    )
+    return Path(codex_home) / "auth.json"
+
+
 def codex_cli_structured_completion(
     response_model: type[T],
     messages: list[dict[str, str]],
@@ -417,7 +648,17 @@ def codex_cli_structured_completion(
     codex_binary = shutil.which(os.getenv("WORKBENCH_CODEX_BINARY", "codex"))
     if not codex_binary:
         raise RuntimeError("Codex CLI is not installed or is not available on PATH.")
-    if not config.api_base:
+    auth_mode = codex_auth_mode(allow_web_search=allow_web_search)
+    local_auth_source: Optional[Path] = None
+    if auth_mode == "local_codex":
+        candidate = _local_codex_auth_path()
+        if not candidate.exists():
+            raise RuntimeError(
+                "本机 Codex 登录态不可用：未找到 "
+                f"{candidate}。请先在本机完成 Codex 登录，或改用 API Key 通道。"
+            )
+        local_auth_source = candidate
+    elif not config.api_base:
         raise RuntimeError("Codex CLI transport requires WORKBENCH_LLM_API_BASE.")
 
     model = config.model.removeprefix("openai/")
@@ -440,10 +681,13 @@ def codex_cli_structured_completion(
         temp_path = Path(temp_dir)
         auth_path = temp_path / "auth.json"
         output_path = temp_path / "output.json"
-        auth_path.write_text(
-            json.dumps({"OPENAI_API_KEY": api_key}),
-            encoding="utf-8",
-        )
+        if local_auth_source is not None:
+            shutil.copyfile(local_auth_source, auth_path)
+        else:
+            auth_path.write_text(
+                json.dumps({"OPENAI_API_KEY": api_key}),
+                encoding="utf-8",
+            )
         auth_path.chmod(0o600)
         # Each call uses an ephemeral CODEX_HOME. Disable the unrelated plugin catalog
         # so headless generation does not cold-sync the curated Git repository.
@@ -463,22 +707,28 @@ def codex_cli_structured_completion(
             "never",
             "-C",
             temp_dir,
-            "-m",
-            model,
-            "-c",
-            'model_provider="OpenAI"',
-            "-c",
-            'model_providers.OpenAI.name="OpenAI"',
-            "-c",
-            f"model_providers.OpenAI.base_url={json.dumps(config.api_base)}",
-            "-c",
-            'model_providers.OpenAI.wire_api="responses"',
-            "-c",
-            "model_providers.OpenAI.requires_openai_auth=true",
-            "--output-last-message",
-            str(output_path),
-            "-",
         ]
+        if local_auth_source is not None:
+            # 复用本机 Codex 登录态：使用其默认 provider，允许覆盖模型。
+            override_model = os.getenv("WORKBENCH_CODEX_MODEL", "").strip()
+            if override_model:
+                command += ["-m", override_model]
+        else:
+            command += [
+                "-m",
+                model,
+                "-c",
+                'model_provider="OpenAI"',
+                "-c",
+                'model_providers.OpenAI.name="OpenAI"',
+                "-c",
+                f"model_providers.OpenAI.base_url={json.dumps(config.api_base)}",
+                "-c",
+                'model_providers.OpenAI.wire_api="responses"',
+                "-c",
+                "model_providers.OpenAI.requires_openai_auth=true",
+            ]
+        command += ["--output-last-message", str(output_path), "-"]
         if allow_web_search:
             command[command.index("--color") : command.index("--color")] = [
                 "--enable",
@@ -486,7 +736,10 @@ def codex_cli_structured_completion(
             ]
         environment = os.environ.copy()
         environment["CODEX_HOME"] = temp_dir
-        environment["OPENAI_API_KEY"] = api_key
+        if local_auth_source is not None:
+            environment.pop("OPENAI_API_KEY", None)
+        else:
+            environment["OPENAI_API_KEY"] = api_key
         minimum_timeout = 90.0 if allow_web_search else 180.0
         process_timeout = process_timeout_seconds or max(
             minimum_timeout,
@@ -599,8 +852,13 @@ def structured_completion(
     process_timeout_seconds: Optional[float] = None,
 ) -> T:
     api_key = os.getenv("WORKBENCH_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if os.getenv("WORKBENCH_LLM_TRANSPORT", "litellm").strip().lower() == "codex_cli":
-        if not api_key:
+    transport = (
+        research_transport()
+        if allow_web_search
+        else os.getenv("WORKBENCH_LLM_TRANSPORT", "litellm").strip().lower()
+    )
+    if transport == "codex_cli":
+        if not api_key and codex_auth_mode(allow_web_search) != "local_codex":
             raise RuntimeError("Codex CLI transport requires WORKBENCH_LLM_API_KEY.")
         return codex_cli_structured_completion(
             response_model,
@@ -615,7 +873,10 @@ def structured_completion(
         )
 
     if allow_web_search:
-        raise RuntimeError("联网事实核验要求 WORKBENCH_LLM_TRANSPORT=codex_cli。")
+        raise RuntimeError(
+            "联网研究需要能执行真实 Web 检索的通道："
+            "请设置 WORKBENCH_RESEARCH_TRANSPORT=codex_cli（或 WORKBENCH_LLM_TRANSPORT=codex_cli）。"
+        )
 
     import instructor
     import litellm
@@ -980,6 +1241,402 @@ def _store_fact_verification_cache(
 def fact_verification_required(payload: DraftInputRequest) -> bool:
     text = f"{payload.title} {payload.content}"
     return any(term in text for term in MAJOR_FACT_TERMS)
+
+
+def research_topic_structured(
+    payload: DraftInputRequest,
+    activity_callback: Optional[ActivityCallback] = None,
+) -> ResearchCallResult:
+    """Phase 2：对用户选题做真实联网研究，产出研究简报与角度候选。
+
+    与旧 ``prepare_draft`` 的区别：
+    - 必须实际打开公开页面（``allow_web_search=True``）；
+    - 严格区分已确认事实 / 存疑信息 / 观点；
+    - 只产出研究简报与角度，**不做 Skill / 结构匹配**；
+    - 不生成任何正文。
+    """
+    config = get_llm_config()
+    if config.mode == "offline":
+        return ResearchCallResult(
+            status=disabled_status(config),
+            error="LLM disabled; 研究预览模式。",
+        )
+
+    topic = payload.title.strip()
+    user_material = payload.content.strip()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是娱乐 / 泛娱乐内容的研究编辑。必须实际使用浏览器或网页工具访问当前公开来源，"
+                "不能凭训练记忆回答。优先当事人、机构、平台、主流媒体的原始页面；"
+                "搜索结果摘要不能单独作为证据。至少交叉核对两个相互独立的可靠来源，"
+                "最多执行4次网页检索、打开6个页面，够用就停。"
+                "只记录页面明确支持的内容，不推测、不补写、不脑补动机。"
+                "严格区分三类信息：verified_facts 只能是打开过的可靠页面直接支持的事实；"
+                "uncertain_claims 是流传但未被可靠来源确认、或来源相互冲突的说法；"
+                "opinions 是媒体评论、网友观点、猜测和立场表达，绝不能写成事实。"
+                "verified_facts 里每一条都要给出支持它的 source_urls（必须来自 sources 列表），"
+                "不能把多个来源的内容混进一条事实，也不能让一条事实没有任何来源。"
+                "没有来源的说法只能放进 uncertain_claims。"
+                "如果用户提供的材料没有被公开来源证实，必须放进 uncertain_claims，"
+                "不能因为用户说了就当成事实。"
+                "sources 返回实际打开过的页面，URL 必须是可访问的真实地址；"
+                "事实文本里不要内嵌 Markdown 链接或网址，来源统一放在 sources 字段。"
+                "没有任何可靠来源时，verified_facts 留空，并把缺口写进 research_gap。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"当前日期：{datetime.now(timezone.utc).date().isoformat()}\n"
+                f"选题：{topic}\n"
+                f"用户提供的材料（可能未经核实）：{user_material or '（无）'}\n"
+                f"目标：{payload.goal or '（未指定）'}\n"
+                f"目标时长：{payload.duration_seconds} 秒\n\n"
+                "请完成研究简报，并给出 4-8 个**彼此明显不同**的内容角度候选。"
+                "角度差异要体现在切入点和要回答的问题上，不能只是换措辞；"
+                "每个角度必须写清：核心主张、为什么成立、当前材料能支撑什么、还缺什么材料、"
+                "是否与常见内容撞题、以及主要风险。"
+                "角度的支撑依据必须分类型：verified_fact_indexes 用序号（从 1 开始）引用"
+                "verified_facts 中真正支持该角度的事实；opinion_evidence 只放媒体评论、"
+                "网友观点、公众情绪；example_evidence 只放具体案例；missing_evidence 写清"
+                "为了写成稿还缺什么证据。绝不能把 opinion_evidence 里的内容写进"
+                "verified_fact_indexes。"
+                "不要输出口播稿、标题或分镜。"
+            ),
+        },
+    ]
+    try:
+        output = structured_completion(
+            StructuredResearchOutput,
+            messages,
+            config,
+            allow_web_search=True,
+            activity_callback=activity_callback,
+            activity_phase="research",
+            heartbeat_title="等待联网研究返回",
+            process_timeout_seconds=max(240.0, config.timeout_seconds + 180.0),
+        )
+    except (ValidationError, Exception) as exc:
+        if config.mode == "required":
+            raise
+        status = fallback_status(config, exc)
+        label = research_model_label()
+        if label:
+            status = status.model_copy(update={"model": label})
+        return ResearchCallResult(status=status, error=str(exc)[:400])
+    status = success_status(config)
+    label = research_model_label()
+    if label:
+        status = status.model_copy(update={"model": label})
+    return ResearchCallResult(status=status, output=output)
+
+
+def research_materials_structured(
+    payload: MaterialResearchRequest,
+    activity_callback: Optional[ActivityCallback] = None,
+) -> MaterialResearchCallResult:
+    """Phase 3：围绕 SelectedAngle 的第二轮定向联网研究。
+
+    停止条件（写进提示词，避免无限扩张）：
+    - 已能支撑核心角度写成一稿；
+    - 角度里列出的主要 missing evidence 已尽量补齐；
+    - 有效来源达到 4–8 个；
+    - 继续搜索不会显著增加稿件信息量。
+    同时要求优先复用第一轮已经打开过的来源，避免重复打开相同页面。
+    """
+    config = get_llm_config()
+    if config.mode == "offline":
+        return MaterialResearchCallResult(
+            status=disabled_status(config),
+            error="LLM disabled; 无法执行定向素材研究。",
+        )
+
+    brief = payload.research_brief
+    claim_lines: list[str] = []
+    if brief is not None:
+        for index, claim in enumerate(brief.verified_claims, start=1):
+            sources = " ".join(claim.source_ids) or "无来源"
+            claim_lines.append(f"{index}. {claim.claim}（来源：{sources}）")
+        if not claim_lines:
+            claim_lines = [f"- {item}" for item in brief.verified_facts]
+    known_sources = []
+    if brief is not None:
+        known_sources = [
+            f"- {source.id} | {source.title} | {source.url}"
+            for source in brief.sources
+        ]
+
+    missing = [item for item in payload.angle_missing_evidence if item.strip()]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是娱乐 / 泛娱乐内容的研究编辑，正在做**第二轮定向研究**。"
+                "第一轮研究已经把事件研究清楚；这一轮只做一件事：找到足以支撑"
+                "用户已选定角度写成稿的具体材料。不要重复第一轮的事件综述，"
+                "不要输出新的角度，不要写口播稿。"
+                "必须实际使用浏览器或网页工具打开当前公开来源，不能凭训练记忆回答。"
+                "优先复用下面已经打开过的来源；只有确实需要新证据时才打开新页面，"
+                "避免重复打开完全相同的页面。搜索应优先补：角度缺失的证据、具体案例、"
+                "原始信息、数据、时间线细节、可引用的公开观点、对比案例、历史材料、"
+                "有代表性的互联网讨论、能让稿件更具体的细节。"
+                "停止条件：核心角度已足以写成一稿、主要 evidence gap 已尽量补齐、"
+                "有效来源达到 4-8 个、再搜不会显著增加信息量时立即停止，"
+                "并在 stop_reason 里说明为什么停。不要追求搜尽全网。"
+                "每张素材卡必须写清 relevance_to_angle（为什么对这个角度有用，"
+                "包括它不能证明什么）和 suggested_usage（建议放在稿件的什么位置）。"
+                "严格区分证据类型：fact/data 必须有可靠页面直接支持，并在 verification_status "
+                "标 verified；opinion/quote 明确是观点或发言，不要写成事实；"
+                "来源不足、只看到二手转述、或页面打不开时标 uncertain。"
+                "sources 不可访问或没有来源时 verification_status 必须是 uncertain，"
+                "source_url 留空。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"当前日期：{datetime.now(timezone.utc).date().isoformat()}\n"
+                f"选题：{payload.topic}\n"
+                f"用户已选角度：{payload.angle_name or ''}｜{payload.selected_angle}\n"
+                f"目标时长：{payload.duration_seconds} 秒｜账号类型：{payload.account_type}\n"
+                f"用户补充材料（可能未经核实）：{payload.material_text or '（无）'}\n\n"
+                f"第一轮已确认事实：\n{chr(10).join(claim_lines) or '（无）'}\n\n"
+                f"第一轮已打开过的来源（优先复用）：\n"
+                f"{chr(10).join(known_sources) or '（无）'}\n\n"
+                f"该角度当前缺失的证据：\n"
+                f"{chr(10).join(f'- {item}' for item in missing) or '（未记录）'}\n\n"
+                "请返回 4-10 张素材卡，用于支撑这个角度写成一篇口播稿。"
+            ),
+        },
+    ]
+    try:
+        output = structured_completion(
+            StructuredMaterialResearchOutput,
+            messages,
+            config,
+            allow_web_search=True,
+            activity_callback=activity_callback,
+            activity_phase="research",
+            heartbeat_title="等待定向素材研究返回",
+            process_timeout_seconds=max(240.0, config.timeout_seconds + 180.0),
+        )
+    except (ValidationError, Exception) as exc:
+        if config.mode == "required":
+            raise
+        status = fallback_status(config, exc)
+        label = research_model_label()
+        if label:
+            status = status.model_copy(update={"model": label})
+        return MaterialResearchCallResult(status=status, error=str(exc)[:400])
+    status = success_status(config)
+    label = research_model_label()
+    if label:
+        status = status.model_copy(update={"model": label})
+    return MaterialResearchCallResult(status=status, output=output)
+
+
+def explain_structures_structured(
+    payload: StructureRecommendationRequest,
+    candidates: list[dict[str, object]],
+    generic: dict[str, object],
+    config: LLMRuntimeConfig,
+    activity_callback: Optional[ActivityCallback] = None,
+) -> Optional[StructuredStructureRecommendationOutput]:
+    """用一次（非联网）模型调用解释结构如何套用当前 SelectedMaterials。"""
+    if config.mode == "offline":
+        return None
+
+    material_lines = [
+        f"- {item.id} | {item.type} | {item.title} | {item.summary or item.content[:120]}"
+        for item in payload.materials
+    ]
+    candidate_lines = [
+        f"- {item['id']} | {item['name']} | 骨架：{' -> '.join(item['skeleton'])}"
+        for item in candidates
+    ]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是短视频主编。用户已经选好内容角度和要使用的素材，"
+                "请解释候选写作结构如何套用这些素材。"
+                "只能使用给定结构（不得编造新的结构 id 或骨架）和给定素材"
+                "（material_ids 必须来自给定素材 id）。"
+                "每个结构必须说明：为什么适合这个角度；把哪些素材放进哪个骨架步骤"
+                "（step 用该结构的骨架步骤原文）；哪些地方材料不足；有什么风险。"
+                "不要写正文，不要输出标题。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"选题：{payload.topic}\n"
+                f"已选角度：{payload.selected_angle}\n"
+                f"研究摘要：{payload.research_summary or '（无）'}\n"
+                f"账号类型：{payload.account_type}｜目标时长：{payload.duration_seconds} 秒\n\n"
+                f"用户选中的素材：\n{chr(10).join(material_lines) or '（用户没有选择任何素材）'}\n\n"
+                f"候选结构：\n{chr(10).join(candidate_lines)}\n"
+                f"通用结构 id：{generic['id']}\n\n"
+                "请为每个候选结构返回一条 explanation。"
+            ),
+        },
+    ]
+    try:
+        return structured_completion(
+            StructuredStructureRecommendationOutput,
+            messages,
+            config,
+            activity_callback=activity_callback,
+            activity_phase="writing",
+            process_timeout_seconds=max(120.0, config.timeout_seconds + 60.0),
+        )
+    except (ValidationError, Exception):
+        return None
+
+
+def _evidence_json(evidence: dict[str, object]) -> str:
+    return json.dumps(evidence, ensure_ascii=False, indent=1)
+
+
+def generate_complete_script_structured(
+    request: ScriptGenerationRequest,
+    evidence: dict[str, object],
+    config: LLMRuntimeConfig,
+    activity_callback: Optional[ActivityCallback] = None,
+) -> ScriptGenerationCallResult:
+    """Phase 4：一次生成完整可编辑主稿（不联网，只能用 Allowed Evidence）。"""
+    if config.mode == "offline":
+        return ScriptGenerationCallResult(
+            status=disabled_status(config),
+            error="LLM disabled; 使用本地完整稿兜底。",
+        )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是资深短视频主编，要写一篇可以直接开拍的完整口播初稿。"
+                "只能使用用户提供的「Allowed Evidence」写事实性内容；"
+                "证据之外的事件事实、数字、时间、人物动机一律不得补充，"
+                "也不能使用你自己记忆里的相关信息。"
+                "如果某个论点缺少证据，就不写或用限定表达，"
+                "并把缺口写进 material_gaps。正文里绝对不能出现缺口说明、系统提示、"
+                "素材编号或结构标签，也绝对不能出现任何待补写法，例如「【…】」「[待补]」"
+                "「（此处补充）」「【材料不足】」这类占位符——宁可少写一句，也不要留空。"
+                "把 uncertain / opinion 类素材写成观点或讨论，不能写成已确认事实。"
+                "写作要求：开头直接进入话题，不铺垫；"
+                "围绕用户已选角度这一条主线推进；每一段都要有信息增量；"
+                "真正使用选中的素材，不重复解释同一件事；不制造空洞总结；"
+                "不凭空推测人物动机；结尾不要强行升华；不要排比堆砌。"
+                "结构要求：按给定 structure_steps 的顺序推进，"
+                "把 structure_mapping 里挂到每一步的素材写进对应段落；"
+                "某一步没有素材时这一部分自然缩短，不要为了填满结构而注水。"
+                "只输出一篇主稿，不要多个版本；可以给 2-3 个标题候选和最多 2 个开头方案。"
+                "同时如实报告你实际用到的素材与事实编号（used_material_ids / "
+                "used_claim_ids），以及每一段对应的证据（evidence_map）。"
+                "长度只作参考，不要为凑字数重复信息。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"选题：{request.topic}\n"
+                f"用户已选角度（唯一主线）：{request.angle_name or ''}{request.selected_angle}\n"
+                f"用户补充输入（视为已提供信息，但仍不是公开核实事实）：\n"
+                f"{request.user_material or '（无）'}\n\n"
+                f"写作结构：{request.structure_name}\n"
+                f"结构步骤顺序：{' → '.join(request.structure_steps) or '（未提供，按通用口播推进）'}\n"
+                f"结构 → 素材映射：{json.dumps([m.model_dump() for m in request.structure_mapping], ensure_ascii=False)}\n"
+                f"已知结构缺口：{json.dumps(request.structure_gaps, ensure_ascii=False)}\n\n"
+                f"账号类型：{request.account_type}｜参考时长：{request.duration_seconds} 秒｜"
+                f"语气：{request.tone}｜传播目标：{request.goal}\n"
+                f"额外要求：{request.generation_notes or '（无）'}\n\n"
+                f"Allowed Evidence（只能使用这些）：\n{_evidence_json(evidence)}"
+            ),
+        },
+    ]
+    try:
+        output = structured_completion(
+            StructuredCompleteScriptOutput,
+            messages,
+            config,
+            activity_callback=activity_callback,
+            activity_phase="writing",
+            heartbeat_title="等待完整初稿返回",
+            process_timeout_seconds=max(240.0, config.timeout_seconds + 120.0),
+        )
+    except (ValidationError, Exception) as exc:
+        if config.mode == "required":
+            raise
+        status = fallback_status(config, exc)
+        label = local_codex_model_label()
+        if label:
+            status = status.model_copy(update={"model": label})
+        return ScriptGenerationCallResult(status=status, error=str(exc)[:400])
+    status = success_status(config)
+    label = local_codex_model_label()
+    if label:
+        status = status.model_copy(update={"model": label})
+    return ScriptGenerationCallResult(status=status, output=output)
+
+
+def repair_script_evidence_structured(
+    *,
+    spoken_script: str,
+    request: ScriptGenerationRequest,
+    evidence: dict[str, object],
+    already_used_material_ids: list[str],
+    config: LLMRuntimeConfig,
+    activity_callback: Optional[ActivityCallback] = None,
+) -> Optional[StructuredEvidenceRepairOutput]:
+    """Phase 4：Evidence Check —— 找出无证据事实并删除 / 降级。"""
+    if config.mode == "offline":
+        return None
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是事实核查编辑。逐句检查口播稿中的**具体事实性陈述**"
+                "（事件、时间、数字、身份、因果、动机、他人表态等），"
+                "判断它是否能被 Allowed Evidence 直接支持。"
+                "只能用 Allowed Evidence 判断，不要使用记忆，也不要联网。"
+                "只要证据里找不到支持，就算这条陈述无依据。"
+                "观点、判断、提问、情绪表达不算事实性陈述，不要误判。"
+                "对每条无依据陈述给出原因和处理动作："
+                "removed（删除该陈述）、downgraded（改成有限定、非确定的表达）、"
+                "kept_as_opinion（明确写成观点）。"
+                "然后输出修订后的完整口播稿：保持原文风格与主线，"
+                "只处理无依据陈述，不要重写其他内容，不要新增任何事实，"
+                "不要出现占位符、系统提示、素材编号或缺口说明。"
+                "缺少某个关键事实时，写进 material_gaps（正文之外）。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"选题：{request.topic}\n"
+                f"已选角度：{request.selected_angle}\n\n"
+                f"当前口播稿：\n{spoken_script}\n\n"
+                f"生成阶段声明的 used_material_ids：{json.dumps(already_used_material_ids, ensure_ascii=False)}\n\n"
+                f"Allowed Evidence：\n{_evidence_json(evidence)}"
+            ),
+        },
+    ]
+    try:
+        return structured_completion(
+            StructuredEvidenceRepairOutput,
+            messages,
+            config,
+            activity_callback=activity_callback,
+            activity_phase="quality",
+            heartbeat_title="等待证据检查返回",
+            process_timeout_seconds=max(180.0, config.timeout_seconds + 90.0),
+        )
+    except (ValidationError, Exception):
+        return None
 
 
 def verify_major_claim_structured(

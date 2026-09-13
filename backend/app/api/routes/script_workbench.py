@@ -17,6 +17,15 @@ from app.script_workbench import (
     DraftRewriteRequest,
     DraftRewriteResponse,
     DraftRewriteTask,
+    PrepareDraftRequest,
+    PrepareDraftResponse,
+    MaterialResearchRequest,
+    MaterialResearchResponse,
+    PrepareResearchResponse,
+    ScriptGenerationRequest,
+    ScriptGenerationResponse,
+    StructureRecommendationRequest,
+    StructureRecommendationResponse,
     ExternalGateReport,
     GeneratedScript,
     GeneratedScriptUpdateRequest,
@@ -87,6 +96,11 @@ from app.script_workbench import (
     media_root,
     model_runtime_status,
     overview,
+    prepare_draft,
+    prepare_research,
+    generate_complete_script,
+    recommend_structures,
+    research_angle_materials,
     publishable_skill_templates,
     skill_promotion_readiness,
     skill_promotion_errors,
@@ -604,6 +618,39 @@ def create_hotspot_scripts(payload: GenerateHotspotRequest) -> Any:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     persist_hotspot_if_available(response)
     return response
+
+
+@router.post("/research/briefs", response_model=PrepareResearchResponse)
+def prepare_research_brief(payload: PrepareDraftRequest) -> Any:
+    """Phase 2：联网研究 + 角度候选（研究阶段不做结构匹配）。"""
+    return prepare_research(payload)
+
+
+@router.post("/scripts/generate", response_model=ScriptGenerationResponse)
+def generate_complete_script_endpoint(payload: ScriptGenerationRequest) -> Any:
+    """Phase 4：按 Allowed Evidence 生成完整主稿 + 证据追踪。"""
+    return generate_complete_script(payload)
+
+
+@router.post("/research/materials", response_model=MaterialResearchResponse)
+def research_selected_angle_materials(payload: MaterialResearchRequest) -> Any:
+    """Phase 3：围绕 SelectedAngle 的第二轮定向联网研究。"""
+    return research_angle_materials(payload)
+
+
+@router.post(
+    "/structures/recommend", response_model=StructureRecommendationResponse
+)
+def recommend_structures_for_angle(
+    payload: StructureRecommendationRequest,
+) -> Any:
+    """Phase 3：基于 SelectedAngle + SelectedMaterials 推荐结构。"""
+    return recommend_structures(payload)
+
+
+@router.post("/drafts/prepare", response_model=PrepareDraftResponse)
+def prepare_user_draft(payload: PrepareDraftRequest) -> Any:
+    return prepare_draft(payload)
 
 
 @router.post("/writing-presets", response_model=TemplatePattern)

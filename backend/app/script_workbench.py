@@ -289,6 +289,158 @@ class HotspotBrief(BaseModel):
     no_go_zones: list[str]
 
 
+class FactSource(BaseModel):
+    """研究来源。Phase 3：增加 id，供逐条事实追溯（source_ids）。"""
+
+    id: str = ""
+    title: str
+    url: str
+    publisher: str = ""
+    published_at: Optional[str] = None
+
+
+class FactClaim(BaseModel):
+    """逐条可追溯的事实声明：哪一条事实由哪些来源支持。"""
+
+    id: str
+    claim: str
+    source_ids: list[str] = Field(default_factory=list)
+    confidence: Literal["high", "medium", "low"] = "medium"
+    verification_status: Literal["verified", "uncertain"] = "verified"
+    note: str = ""
+
+
+class AngleEvidenceBundle(BaseModel):
+    """Angle 支撑依据按证据类型分开，避免把网友观点当事实。"""
+
+    verified_fact_ids: list[str] = Field(default_factory=list)
+    verified_facts: list[str] = Field(default_factory=list)
+    opinions: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+
+
+MaterialType = Literal[
+    "fact",
+    "quote",
+    "opinion",
+    "case",
+    "data",
+    "background",
+    "comparison",
+]
+
+
+class MaterialCard(BaseModel):
+    """Phase 3：第二轮 Angle-driven Research 产出的素材卡。"""
+
+    id: str
+    type: MaterialType = "fact"
+    title: str
+    summary: str = ""
+    content: str
+    source: str = ""
+    publisher: str = ""
+    published_at: Optional[str] = None
+    source_url: str = ""
+    verification_status: Literal["verified", "uncertain", "preview"] = "uncertain"
+    # Phase 4：事实类素材若来自某条已核验 claim，记录其 id 作为证据链。
+    claim_id: Optional[str] = None
+    relevance_to_angle: str = ""
+    suggested_usage: str = ""
+    risk: str = ""
+    selected: bool = False
+
+
+class StructureMaterialMapping(BaseModel):
+    step: str
+    material_ids: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class StructureRecommendation(BaseModel):
+    id: str
+    name: str
+    kind: Literal["skill", "generic"] = "skill"
+    skeleton: list[str] = Field(default_factory=list)
+    hook_formula: str = ""
+    emotion_rhythm: str = ""
+    ending_formula: str = ""
+    why_fits: str = ""
+    material_mapping: list[StructureMaterialMapping] = Field(default_factory=list)
+    material_gaps: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+
+
+class ResearchBrief(BaseModel):
+    """Compact evidence packet shared by angle selection and drafting.
+
+    Phase 1 note: this schema is extended in place (reuse/extend) so a single
+    "研究简报 / Research Brief" can carry the fields the new creation flow
+    needs. Extra fields default to empty, so existing callers and stored
+    payloads keep working without a database migration.
+    """
+
+    input_type: str = "hotspot"
+    user_goal: str = ""
+    summary: str = ""
+    # Phase 2：只有取得可靠来源并完成事实核验，才允许把状态标为 verified。
+    verification_status: Literal["preview", "partial", "verified"] = "preview"
+    verification_note: str = ""
+    verified_facts: list[str] = Field(default_factory=list)
+    # Phase 3：逐条事实与来源映射（verified_facts 为上表的兼容字符串视图）。
+    verified_claims: list[FactClaim] = Field(default_factory=list)
+    uncertain_claims: list[str] = Field(default_factory=list)
+    opinions: list[str] = Field(default_factory=list)
+    controversies: list[str] = Field(default_factory=list)
+    audience_sentiment: str = ""
+    candidate_angles: list[str] = Field(default_factory=list)
+    timeline: list[str] = Field(default_factory=list)
+    platform_context: list[str] = Field(default_factory=list)
+    concrete_details: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    research_gap: list[str] = Field(default_factory=list)
+    sources: list[FactSource] = Field(default_factory=list)
+
+
+class AngleCandidate(BaseModel):
+    """内容角度候选卡片（Phase 2：4–8 个明显不同的角度）。"""
+
+    id: str
+    name: str
+    thesis: str
+    reason: str
+    required_facts: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    # Phase 2 新增：支撑材料 / 缺失材料 / 撞题判断 / 主要风险
+    supporting_materials: list[str] = Field(default_factory=list)
+    missing_materials: list[str] = Field(default_factory=list)
+    overlap_risk: str = ""
+    main_risks: list[str] = Field(default_factory=list)
+    # Phase 3：支撑依据按证据类型分开（事实 / 观点 / 案例 / 缺失）。
+    evidence: AngleEvidenceBundle = Field(default_factory=AngleEvidenceBundle)
+
+
+class DraftOutline(BaseModel):
+    hook_task: str
+    key_facts: list[str] = Field(default_factory=list)
+    progression: list[str] = Field(default_factory=list)
+    turn: str = ""
+    emotion: str = ""
+    ending: str = ""
+    source_map: list[str] = Field(default_factory=list)
+
+
+class SelectionRecord(BaseModel):
+    angle_mode: Literal["recommended", "manual", "custom", "none"] = "recommended"
+    selected_angle: str = ""
+    skill_selection_mode: Literal["recommended", "manual", "custom"] = "recommended"
+    primary_skill_id: Optional[str] = None
+    primary_skill_version: Optional[str] = None
+    additional_skill_ids: list[str] = Field(default_factory=list)
+    user_overrides: list[str] = Field(default_factory=list)
+
+
 class GeneratedScriptVersion(BaseModel):
     id: str
     source_script_id: str
@@ -301,6 +453,37 @@ class GeneratedScriptVersion(BaseModel):
     version_label: str
     editor_note: Optional[str] = None
     created_at: datetime
+
+
+class ScriptEvidenceLink(BaseModel):
+    """段落 / 结构步骤与素材、事实的对应关系（不进正文）。"""
+
+    section: str
+    material_ids: list[str] = Field(default_factory=list)
+    claim_ids: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class MaterialGap(BaseModel):
+    """材料缺口：缺口内容 + 初稿的处理方式（正文之外）。"""
+
+    gap: str
+    handling: str
+
+
+class UnsupportedClaim(BaseModel):
+    """Evidence Check 发现的无证据事实陈述及处理动作。"""
+
+    text: str
+    reason: str
+    action: Literal["removed", "downgraded", "kept_as_opinion"] = "removed"
+
+
+class EvidenceCheckResult(BaseModel):
+    passed: bool = True
+    unsupported_claims: list[UnsupportedClaim] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    checked_at: Optional[datetime] = None
 
 
 class GeneratedScript(BaseModel):
@@ -321,6 +504,44 @@ class GeneratedScript(BaseModel):
     editor_note: Optional[str] = None
     updated_at: Optional[datetime] = None
     version_history: list[GeneratedScriptVersion] = Field(default_factory=list)
+    # Phase 4：完整成稿的证据追踪（兼容追加，默认空）。
+    title_candidates: list[str] = Field(default_factory=list)
+    used_material_ids: list[str] = Field(default_factory=list)
+    used_claim_ids: list[str] = Field(default_factory=list)
+    material_gaps: list[MaterialGap] = Field(default_factory=list)
+    evidence_map: list[ScriptEvidenceLink] = Field(default_factory=list)
+    evidence_check: EvidenceCheckResult = Field(default_factory=EvidenceCheckResult)
+    structure_coverage: list[str] = Field(default_factory=list)
+    evidence_policy: list[str] = Field(default_factory=list)
+
+
+class ScriptGenerationRequest(BaseModel):
+    """Phase 4：完整成稿生成请求（受 Allowed Evidence 约束）。"""
+
+    topic: str
+    user_material: str = ""
+    selected_angle: str
+    angle_name: str = ""
+    structure_id: str = "generic-structure"
+    structure_name: str = "通用写作骨架"
+    structure_steps: list[str] = Field(default_factory=list)
+    structure_mapping: list[StructureMaterialMapping] = Field(default_factory=list)
+    structure_gaps: list[str] = Field(default_factory=list)
+    materials: list[MaterialCard] = Field(default_factory=list)
+    research_brief: Optional[ResearchBrief] = None
+    account_type: str = "娱乐吃瓜号"
+    duration_seconds: int = Field(default=60, ge=15, le=180)
+    tone: str = "真人口语"
+    goal: str = "引发讨论"
+    generation_notes: str = ""
+
+
+class ScriptGenerationResponse(BaseModel):
+    script: GeneratedScript
+    generation_mode: Literal["ai", "fallback"] = "fallback"
+    model: Optional[str] = None
+    evidence_policy: list[str] = Field(default_factory=list)
+    note: str = ""
 
 
 class WorkbenchOverview(BaseModel):
@@ -643,6 +864,16 @@ class GenerateHotspotResponse(BaseModel):
     scripts: list[GeneratedScript]
 
 
+class PrepareDraftRequest(BaseModel):
+    topic: str = Field(min_length=4)
+    material_text: str = ""
+    source_url: Optional[str] = None
+    account_type: str = "娱乐吃瓜号"
+    duration_seconds: int = Field(default=45, ge=15, le=180)
+    tone: str = "犀利但不造谣"
+    goal: str = "引发评论"
+
+
 class DraftInputRequest(BaseModel):
     title: str = "未命名稿件"
     content: str = Field(min_length=4)
@@ -651,6 +882,12 @@ class DraftInputRequest(BaseModel):
     duration_seconds: int = Field(default=45, ge=15, le=180)
     tone: str = "克制、有信息增量"
     goal: str = "让脚本更完整、更好拍"
+    material_text: str = ""
+    selected_angle: str = ""
+    angle_mode: Literal["recommended", "manual", "custom", "none"] = "recommended"
+    skill_selection_mode: Literal["recommended", "manual", "custom"] = "recommended"
+    custom_instructions: list[str] = Field(default_factory=list)
+    research_brief: Optional[ResearchBrief] = None
 
 
 class DraftDiagnosis(BaseModel):
@@ -671,15 +908,71 @@ class SkillMatch(BaseModel):
     apply_plan: list[str]
 
 
+class PrepareDraftResponse(BaseModel):
+    research_brief: ResearchBrief
+    angle_candidates: list[AngleCandidate]
+    matched_skills: list[SkillMatch]
+    generation_mode: Literal["ai", "fallback", "blocked"] = "fallback"
+    sources: list[FactSource] = Field(default_factory=list)
+
+
+class MaterialResearchRequest(BaseModel):
+    """第二轮 Angle-driven Research：query 由选题 + 已选角度 + 研究简报 + 缺失证据生成。"""
+
+    topic: str
+    material_text: str = ""
+    source_url: Optional[str] = None
+    account_type: str = "娱乐吃瓜号"
+    duration_seconds: int = Field(default=60, ge=15, le=180)
+    tone: str = "真人口语"
+    goal: str = "引发讨论"
+    selected_angle: str
+    angle_name: str = ""
+    angle_missing_evidence: list[str] = Field(default_factory=list)
+    research_brief: Optional[ResearchBrief] = None
+
+
+class MaterialResearchResponse(BaseModel):
+    materials: list[MaterialCard] = Field(default_factory=list)
+    generation_mode: Literal["ai", "fallback"] = "fallback"
+    research_model: Optional[str] = None
+    guidance: str = ""
+    stop_reason: str = ""
+    reused_source_count: int = 0
+
+
+class StructureRecommendationRequest(BaseModel):
+    topic: str
+    selected_angle: str
+    materials: list[MaterialCard] = Field(default_factory=list)
+    account_type: str = "娱乐吃瓜号"
+    duration_seconds: int = Field(default=60, ge=15, le=180)
+    tone: str = "真人口语"
+    goal: str = "引发讨论"
+    research_summary: str = ""
+
+
+class StructureRecommendationResponse(BaseModel):
+    """结构推荐：1–3 个推荐 + 永远存在的通用结构 fallback。"""
+
+    recommendations: list[StructureRecommendation] = Field(default_factory=list)
+    generic_structure: StructureRecommendation
+    generation_mode: Literal["ai", "fallback"] = "fallback"
+    model: Optional[str] = None
+    note: str = ""
+
+
+class PrepareResearchResponse(BaseModel):
+    """Phase 2：只做研究 + 角度候选，不返回任何 Skill / 结构匹配。"""
+
+    research_brief: ResearchBrief
+    angle_candidates: list[AngleCandidate]
+    generation_mode: Literal["ai", "fallback"] = "fallback"
+    research_model: Optional[str] = None
+
+
 class DraftRewriteRequest(DraftInputRequest):
     skill_ids: list[str] = Field(default_factory=list)
-
-
-class FactSource(BaseModel):
-    title: str
-    url: str
-    publisher: str = ""
-    published_at: Optional[str] = None
 
 
 class FactVerification(BaseModel):
@@ -704,6 +997,9 @@ class DraftRewriteResponse(BaseModel):
     generation_model: Optional[str] = None
     generation_note: str = ""
     fact_verification: FactVerification = Field(default_factory=FactVerification)
+    selected_angle: str = ""
+    outline: Optional[DraftOutline] = None
+    selection_record: SelectionRecord = Field(default_factory=SelectionRecord)
 
 
 class DraftRewriteActivity(BaseModel):
@@ -970,6 +1266,7 @@ def bootstrap_templates() -> None:
                 deduplicate_templates(
                     [
                         *read_local_skill_templates(),
+                        *read_published_douyin_skill_templates(),
                         *(
                             [
                                 enrich_skill_template(template)
@@ -982,6 +1279,60 @@ def bootstrap_templates() -> None:
                 )
             )
         )
+
+
+def read_published_douyin_skill_templates() -> list[TemplatePattern]:
+    """Load the checked-in writing Skill index when no local workbench pack exists."""
+    configured = os.getenv("WORKBENCH_DOUYIN_SKILL_INDEX", "").strip()
+    roots = [Path(configured)] if configured else []
+    roots.append(PROJECT_ROOT.parent / "douyin-writing-skills")
+    indexes: list[Path] = []
+    for root in roots:
+        if root.is_file():
+            indexes.append(root)
+        elif root.is_dir():
+            indexes.extend(root.glob("published/packages/*/runtime/references/skills.json"))
+    if not indexes:
+        return []
+    try:
+        payload = json.loads(max(indexes, key=lambda item: item.stat().st_mtime).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    raw_items = payload.get("skills") if isinstance(payload, dict) else []
+    if not isinstance(raw_items, list):
+        return []
+    templates: list[TemplatePattern] = []
+    for raw in raw_items:
+        if not isinstance(raw, dict) or not raw.get("id") or not raw.get("name"):
+            continue
+        method = str(raw.get("writing_method") or "")
+        skeleton = [item.strip() for item in re.split(r"[→>]+", method) if item.strip()][:8]
+        templates.append(
+            TemplatePattern(
+                id=str(raw["id"]),
+                name=str(raw["name"]),
+                account_type=str(raw.get("account_type") or "泛娱乐观点号"),
+                hotspot_types=[str(item) for item in raw.get("hotspot_types", [])][:12],
+                solves_problems=[str(item) for item in raw.get("solves_problems", [])][:8],
+                match_signals=[str(item) for item in raw.get("match_signals", [])][:12],
+                applicable_scenes=[str(item) for item in raw.get("applicable_scenes", [])][:10],
+                unsuitable_scenes=[],
+                skeleton=skeleton or ["建立观看理由", "补充事实", "推进判断", "收束"],
+                hook_formula=method[:220] or "先建立观看理由，再推进具体事实。",
+                emotion_rhythm="好奇 → 理解 → 判断",
+                ending_formula="用克制判断或开放问题收束。",
+                risk_boundary=str(raw.get("risk_boundary") or "只使用可核实信息，不编造细节。"),
+                quality_score=int(raw.get("quality_score") or 80),
+                usage_count=0,
+                source_titles=["douyin-writing-skills stable runtime"],
+                source_count=1,
+                pattern_fingerprint=str(raw.get("fingerprint") or ""),
+                status="active",
+                required_inputs=["主题", "事实素材", "写作目标"],
+                output_contract=["口播稿", "结构说明", "风险边界"],
+            )
+        )
+    return templates
 
 
 def enable_offline_evaluation_templates() -> None:
@@ -2265,7 +2616,7 @@ def external_link_gate(link: Optional[str] = None, run_link: bool = False) -> di
 
 
 def external_llm_gate(expect_model: bool = False) -> dict:
-    from app.workbench_llm import get_llm_config
+    from app.workbench_llm import fact_verification_required, get_llm_config
 
     config = get_llm_config()
     settings = read_local_settings_status()
@@ -3837,6 +4188,11 @@ def match_templates(account_type: str, hotspot: str) -> list[TemplatePattern]:
 
 
 def risk_check(text: str) -> RiskCheck:
+    """基础关键词风控（Draft Risk 的第一层）。
+
+    只用整词 / 短语匹配，避免把正常用词误判成风险，
+    例如「抒情摇滚」「滚烫」不应命中攻击性表达。
+    """
     rules = [
         ("未经证实", "high", "疑似未经证实事实", "改成“网传信息仍需以官方回应为准”。"),
         (
@@ -3847,7 +4203,6 @@ def risk_check(text: str) -> RiskCheck:
         ),
         ("私生活", "high", "涉及明星隐私边界", "只讨论公开回应和传播影响。"),
         ("未成年", "high", "涉及未成年人高敏内容", "删除相关细节，保留公共议题表达。"),
-        ("滚", "medium", "攻击性表达", "改成克制的观点表达。"),
     ]
     items: list[RiskItem] = []
     for keyword, level, reason, rewrite in rules:
@@ -3860,6 +4215,20 @@ def risk_check(text: str) -> RiskCheck:
                     rewrite=rewrite,
                 )
             )
+    # 攻击性表达：只匹配真正的驱赶/辱骂用法，不误伤「摇滚 / 滚烫 / 翻滚」等正常词。
+    insult_patterns = [
+        r"滚(?:开|蛋|出去|远点)",
+        r"(?:给我|叫他|让她|让他|你)滚(?![烫动])(?![球石])",
+    ]
+    if any(re.search(pattern, text) for pattern in insult_patterns):
+        items.append(
+            RiskItem(
+                label="攻击性表达",
+                level="medium",
+                reason="出现驱赶或辱骂性质的表达。",
+                rewrite="改成克制的观点表达。",
+            )
+        )
     if any(item.level == "high" for item in items):
         return RiskCheck(passed=False, level="high", items=items)
     if items:
@@ -4618,6 +4987,8 @@ def rewrite_draft(
         candidates = deduplicate_templates(
             [template for template in skill_pool if skill_is_routable(template)]
         )[:3]
+    if not candidates and payload.skill_selection_mode == "custom":
+        candidates = [pick_template(payload.account_type)]
     if not candidates:
         return DraftRewriteResponse(
             diagnosis=diagnosis,
@@ -4628,6 +4999,13 @@ def rewrite_draft(
             generation_note="当前仅有候选或暂停中的 Skill，未进行自动套用。",
             fact_verification=fact_verification,
         )
+
+    if payload.skill_selection_mode == "manual" and payload.skill_ids:
+        ordered = {item: index for index, item in enumerate(payload.skill_ids)}
+        candidates = sorted(
+            candidates,
+            key=lambda item: ordered.get(item.id, len(ordered)),
+        )[:2]
 
     available_names = "、".join(item.name for item in candidates)
     activity(
@@ -4707,7 +5085,7 @@ def rewrite_draft(
             build_rewrite_script(
                 payload, diagnosis, matches[min(index - 1, len(matches) - 1)], index
             )
-            for index in range(1, 2)
+            for index in range(1, 4)
         ]
         generation_mode = "fallback"
         generation_note = (
@@ -4716,6 +5094,30 @@ def rewrite_draft(
             else "AI 当前未启用，展示本地结构工作稿。"
         )
     GENERATED[:0] = scripts
+    primary_skill = matches[0].skill if matches else None
+    outline = DraftOutline(
+        hook_task=(payload.selected_angle or "先明确这条内容最值得继续看的判断。"),
+        key_facts=fact_verification.verified_facts[:5]
+        or ([payload.material_text.strip()] if payload.material_text.strip() else ["待补充可核实事实"]),
+        progression=[
+            "先交代观众已经知道的表面信息。",
+            "补充一个具体细节或关键过程。",
+            "把事实推进到用户确认的核心判断。",
+        ],
+        turn="在事实与个人判断之间做一次清楚转折。",
+        emotion="好奇 → 理解 → 形成自己的判断",
+        ending="用一句克制的判断或开放问题收束，不强行升华。",
+        source_map=[f"事实 {index + 1}：来源待补充" for index, _ in enumerate(fact_verification.verified_facts[:5])],
+    )
+    selection_record = SelectionRecord(
+        angle_mode=payload.angle_mode,
+        selected_angle=payload.selected_angle,
+        skill_selection_mode=payload.skill_selection_mode,
+        primary_skill_id=primary_skill.id if primary_skill else None,
+        primary_skill_version=primary_skill.pattern_fingerprint if primary_skill else None,
+        additional_skill_ids=[item.skill.id for item in matches[1:2]],
+        user_overrides=payload.custom_instructions[:6],
+    )
     return DraftRewriteResponse(
         diagnosis=diagnosis,
         matched_skills=matches,
@@ -4729,6 +5131,9 @@ def rewrite_draft(
         generation_model=model_status.model if model_status.used_model else None,
         generation_note=generation_note,
         fact_verification=fact_verification,
+        selected_angle=payload.selected_angle,
+        outline=outline,
+        selection_record=selection_record,
     )
 
 
@@ -7278,6 +7683,1629 @@ def create_video_upload_result(
     )
     remember_video_upload(response)
     return response
+
+
+_RESEARCH_ANGLE_TEMPLATES: list[tuple[str, str, str, list[str], str]] = [
+    (
+        "结果反差",
+        "先给出大家以为的结果，再讲公开信息里真正不同的部分",
+        "观众通常已经知道结论，反差能在最短时间建立继续看下去的理由。",
+        ["一个可核实的结果或变化", "一个和直觉不同的公开细节"],
+        "这类切入很常见，需要靠更准确的细节或时间线拉开差距。",
+    ),
+    (
+        "过程归因",
+        "这件事为什么会走到今天，关键节点和转折是什么",
+        "有时间线、多次动作或多次回应的题材，解释力比复述更强。",
+        ["关键时间节点", "公开回应或可查证的过程记录"],
+        "如果只按时间复述容易变成流水账，必须给出一个判断。",
+    ),
+    (
+        "人物处境",
+        "处在事件中心的人当时面对什么选择和代价",
+        "把公共事件落到具体处境，观众更容易代入，也更容易留下讨论。",
+        ["当事方的公开表达", "可以核实的人物背景事实"],
+        "推测人物动机容易越界，必须以公开表达为准。",
+    ),
+    (
+        "争议焦点",
+        "双方真正争论的是什么，分歧到底从哪里来",
+        "争议型题材天然带讨论度，把分歧讲清楚比站队更有信息量。",
+        ["争议双方各自可核实的主张", "争议是如何升级的时间线"],
+        "容易变成引战，必须避免人身攻击和无证据动机推测。",
+    ),
+    (
+        "澄清纠偏",
+        "公开信息里最容易被误读的一点是什么",
+        "传闻多、误读多的题材，纠偏本身自带信息增量。",
+        ["被误读的原始说法", "权威来源对同一说法的解释"],
+        "纠偏需要至少一个可靠来源，否则会变成另一种传言。",
+    ),
+    (
+        "观众视角",
+        "普通用户为什么会把自己代入这件事",
+        "情绪型话题里，观众视角最容易引发评论和转发。",
+        ["有代表性的公开观点", "能被观众代入的普遍处境"],
+        "只谈情绪容易空，必须给出具体事实支撑。",
+    ),
+]
+
+
+def _research_sources_from_output(items: list[object]) -> list[FactSource]:
+    """来源去重并分配稳定 id（src-1、src-2…），供逐条事实追溯。"""
+    sources: list[FactSource] = []
+    seen: set[str] = set()
+    for item in items:
+        url = str(getattr(item, "url", "") or "").strip()
+        title = str(getattr(item, "title", "") or "").strip()
+        if not title or not url.startswith(("https://", "http://")) or url in seen:
+            continue
+        seen.add(url)
+        publisher = str(getattr(item, "publisher", "") or "").strip()
+        published_at = getattr(item, "published_at", None)
+        sources.append(
+            FactSource(
+                id=f"src-{len(sources) + 1}",
+                title=title,
+                url=url,
+                publisher=publisher,
+                published_at=published_at,
+            )
+        )
+    return sources[:12]
+
+
+def _verification_confidence(value: object) -> Literal["high", "medium", "low"]:
+    text = str(value or "").strip().lower()
+    if text in {"high", "medium", "low"}:
+        return text  # type: ignore[return-value]
+    return "medium"
+
+
+def _claims_from_research_output(
+    items: list[object],
+    sources: list[FactSource],
+) -> tuple[list[FactClaim], list[str]]:
+    """逐条事实 + 来源映射。没有有效来源支持的事实降级为待核验。"""
+    url_to_id = {source.url: source.id for source in sources}
+    claims: list[FactClaim] = []
+    demoted: list[str] = []
+    for item in items:
+        claim_text = str(getattr(item, "claim", "") or "").strip()
+        if len(claim_text) < 6:
+            continue
+        source_ids: list[str] = []
+        for raw_url in getattr(item, "source_urls", []) or []:
+            url = str(raw_url or "").strip()
+            if url in url_to_id and url_to_id[url] not in source_ids:
+                source_ids.append(url_to_id[url])
+        if len(source_ids) < 1:
+            # 没有可追溯来源：不能标记为已确认事实。
+            demoted.append(claim_text)
+            continue
+        claims.append(
+            FactClaim(
+                id=f"fact-{len(claims) + 1}",
+                claim=claim_text,
+                source_ids=source_ids,
+                confidence=_verification_confidence(
+                    getattr(item, "confidence", "medium")
+                ),
+                verification_status="verified",
+                note=str(getattr(item, "note", "") or "").strip()[:200],
+            )
+        )
+    return claims, demoted
+
+
+def _deterministic_research_angles(
+    topic: str,
+    supporting: Optional[list[str]] = None,
+) -> list[AngleCandidate]:
+    """联网不可用时的角度预览：6 个明显不同的切入点，明确标注为候选。"""
+    base = topic.strip() or "这个选题"
+    supporting_items = [item for item in (supporting or []) if item.strip()][:2]
+    angles: list[AngleCandidate] = []
+    for index, (name, focus, why, requires, overlap) in enumerate(
+        _RESEARCH_ANGLE_TEMPLATES, start=1
+    ):
+        angles.append(
+            AngleCandidate(
+                id=f"angle-{index}",
+                name=name,
+                thesis=f"{focus}：{base}",
+                reason=why,
+                required_facts=requires,
+                risk_notes=["未能核实的说法不能写成事实断言"],
+                supporting_materials=supporting_items,
+                missing_materials=[f"还缺：{item}" for item in requires],
+                overlap_risk=overlap,
+                main_risks=["未经核验的信息不能作为论据"],
+            )
+        )
+    return angles
+
+
+def _preview_research_brief(
+    payload: PrepareDraftRequest,
+    *,
+    note: str,
+    extra_gap: Optional[list[str]] = None,
+) -> ResearchBrief:
+    """研究预览：只整理用户输入，绝不标记为已确认事实。"""
+    user_items = [
+        line.strip(" -•\t")
+        for line in payload.material_text.splitlines()
+        if len(line.strip()) >= 8
+    ][:8]
+    gaps = list(extra_gap or [])
+    gaps.append("尚未联网核验：涉及当前事件的事实需要补充可靠来源后再写入正文。")
+    if payload.source_url:
+        gaps.append("用户提供了来源链接，但还没有打开页面核对内容。")
+    return ResearchBrief(
+        input_type="hotspot",
+        user_goal=payload.goal,
+        summary="研究预览：以下内容来自你的输入，尚未完成联网事实核验。",
+        verification_status="preview",
+        verification_note=note,
+        verified_facts=[],
+        uncertain_claims=user_items,
+        opinions=[],
+        controversies=[],
+        audience_sentiment="",
+        candidate_angles=[],
+        timeline=[],
+        platform_context=["抖音短视频口播", f"目标时长 {payload.duration_seconds} 秒"],
+        concrete_details=user_items,
+        risk_flags=["未经联网核验的信息不能写成事实断言"],
+        research_gap=gaps,
+        sources=[],
+    )
+
+
+def _angles_from_research_output(
+    items: list[object],
+    topic: str,
+    claims: list[FactClaim],
+) -> list[AngleCandidate]:
+    angles: list[AngleCandidate] = []
+    seen: set[str] = set()
+    for item in items:
+        thesis = str(getattr(item, "thesis", "") or "").strip()
+        name = str(getattr(item, "name", "") or "").strip()
+        if len(thesis) < 6 or not name or thesis in seen:
+            continue
+        seen.add(thesis)
+        missing_materials = [
+            str(value).strip()
+            for value in (getattr(item, "missing_materials", []) or [])
+            if str(value).strip()
+        ][:5]
+        main_risks = [
+            str(value).strip()
+            for value in (getattr(item, "main_risks", []) or [])
+            if str(value).strip()
+        ][:4]
+        # 角度引用的必须是真的已确认事实；序号越界一律忽略。
+        evidence_fact_ids: list[str] = []
+        evidence_fact_texts: list[str] = []
+        for raw_index in getattr(item, "verified_fact_indexes", []) or []:
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= index <= len(claims):
+                claim = claims[index - 1]
+                if claim.id not in evidence_fact_ids:
+                    evidence_fact_ids.append(claim.id)
+                    evidence_fact_texts.append(claim.claim)
+        if not evidence_fact_ids:
+            # 兼容：旧模型可能只给 supporting_materials。
+            evidence_fact_texts = [
+                str(value).strip()
+                for value in (getattr(item, "supporting_materials", []) or [])
+                if str(value).strip()
+            ][:5]
+        opinions = [
+            str(value).strip()
+            for value in (getattr(item, "opinion_evidence", []) or [])
+            if str(value).strip()
+        ][:6]
+        examples = [
+            str(value).strip()
+            for value in (getattr(item, "example_evidence", []) or [])
+            if str(value).strip()
+        ][:6]
+        missing_evidence = [
+            str(value).strip()
+            for value in (getattr(item, "missing_evidence", []) or [])
+            if str(value).strip()
+        ][:6]
+        supporting_materials = [*evidence_fact_texts, *examples][:6]
+        angles.append(
+            AngleCandidate(
+                id=f"angle-{len(angles) + 1}",
+                name=name[:30],
+                thesis=thesis[:200],
+                reason=str(getattr(item, "why_it_works", "") or "").strip()[:300],
+                required_facts=(missing_evidence or missing_materials)[:4],
+                risk_notes=main_risks,
+                supporting_materials=supporting_materials,
+                missing_materials=(missing_evidence or missing_materials),
+                overlap_risk=str(getattr(item, "overlap_risk", "") or "").strip()[:200],
+                main_risks=main_risks,
+                evidence=AngleEvidenceBundle(
+                    verified_fact_ids=evidence_fact_ids,
+                    verified_facts=evidence_fact_texts[:6],
+                    opinions=opinions,
+                    examples=examples,
+                    missing_evidence=(missing_evidence or missing_materials)[:6],
+                ),
+            )
+        )
+    # 4–8 个：模型给的太少时用确定性角度补齐；太多时截断。
+    if len(angles) < 4:
+        for extra in _deterministic_research_angles(topic, supporting):
+            if len(angles) >= 4:
+                break
+            if extra.thesis in seen:
+                continue
+            seen.add(extra.thesis)
+            angles.append(extra)
+    angles = angles[:8]
+    return [
+        angle.model_copy(update={"id": f"angle-{index}"})
+        for index, angle in enumerate(angles, start=1)
+    ]
+
+
+def prepare_research(payload: PrepareDraftRequest) -> PrepareResearchResponse:
+    """Phase 2 主流程：联网研究 + 角度候选。不做结构匹配、不生成正文。"""
+    content_parts = [payload.topic.strip(), payload.material_text.strip()]
+    if payload.source_url:
+        content_parts.append(f"用户提供的链接：{payload.source_url.strip()}")
+    draft_payload = DraftInputRequest(
+        title=payload.topic,
+        content="\n".join(part for part in content_parts if part),
+        input_type="hotspot",
+        account_type=payload.account_type,
+        duration_seconds=payload.duration_seconds,
+        tone=payload.tone,
+        goal=payload.goal,
+        material_text=payload.material_text,
+    )
+
+    from app.workbench_llm import get_llm_config, research_topic_structured
+
+    config = get_llm_config()
+    preview_note = "当前为研究预览，尚未完成联网事实核验。"
+    if config.mode == "offline":
+        return PrepareResearchResponse(
+            research_brief=_preview_research_brief(
+                payload,
+                note=preview_note,
+                extra_gap=["研究模型未启用，无法执行联网核验。"],
+            ),
+            angle_candidates=_deterministic_research_angles(payload.topic),
+            generation_mode="fallback",
+            research_model=None,
+        )
+
+    result = research_topic_structured(draft_payload)
+    output = result.output
+    if output is None:
+        error_hint = human_model_error(result.error or "")
+        return PrepareResearchResponse(
+            research_brief=_preview_research_brief(
+                payload,
+                note=(
+                    f"联网研究未完成（{error_hint}），以下是研究预览。"
+                    if result.error
+                    else preview_note
+                ),
+                extra_gap=["联网研究未完成：涉及当前事件的事实需要人工核实。"],
+            ),
+            angle_candidates=_deterministic_research_angles(payload.topic),
+            generation_mode="fallback",
+            research_model=result.status.model,
+        )
+
+    sources = _research_sources_from_output(output.sources)
+    claims, demoted_claims = _claims_from_research_output(
+        output.verified_facts, sources
+    )
+    raw_uncertain = [item.strip() for item in output.uncertain_claims if item.strip()]
+    raw_uncertain = [*demoted_claims, *raw_uncertain]
+    if len(sources) >= 2 and claims:
+        verification_status: Literal["preview", "partial", "verified"] = "verified"
+        verification_note = (
+            f"已联网核对 {len(sources)} 个来源；以下 {len(claims)} 条事实均标注了支持它的来源。"
+        )
+        if demoted_claims:
+            verification_note += (
+                f"另有 {len(demoted_claims)} 条说法因缺少可追溯来源，已降级为待核验信息。"
+            )
+        verified_claims = claims[:10]
+        verified_facts = [claim.claim for claim in verified_claims]
+        uncertain_claims = [item for item in raw_uncertain if item][:10]
+    elif sources or claims:
+        verification_status = "partial"
+        verification_note = (
+            f"已联网检索到 {len(sources)} 个来源，但不足以确认全部事实，仍需人工核实。"
+        )
+        # 未达到确认标准：不得进入“已确认事实”，降级为待核验信息。
+        verified_claims = []
+        verified_facts = []
+        uncertain_claims = [claim.claim for claim in claims] + raw_uncertain
+        uncertain_claims = [item for item in uncertain_claims if item][:10]
+    else:
+        verification_status = "preview"
+        verification_note = "联网检索没有取得可用来源，以下内容只是研究预览。"
+        verified_claims = []
+        verified_facts = []
+        uncertain_claims = [item for item in raw_uncertain if item][:10]
+
+    research_gap = [item.strip() for item in output.research_gap if item.strip()]
+    if verification_status == "partial":
+        research_gap.append("可靠来源不足两个，写入正文前必须补齐。")
+    elif verification_status == "preview":
+        research_gap.append("没有取得可用来源，涉及当前事件的事实需要人工核实。")
+
+    platform_context = [
+        item.strip() for item in output.discussion_context if item.strip()
+    ][:6]
+    platform_context.extend(
+        ["抖音短视频口播", f"目标时长 {payload.duration_seconds} 秒"]
+    )
+
+    brief = ResearchBrief(
+        input_type="hotspot",
+        user_goal=payload.goal,
+        summary=output.summary.strip(),
+        verification_status=verification_status,
+        verification_note=verification_note,
+        verified_facts=verified_facts,
+        verified_claims=verified_claims,
+        uncertain_claims=uncertain_claims,
+        opinions=[item.strip() for item in output.opinions if item.strip()][:8],
+        controversies=[item.strip() for item in output.controversies if item.strip()][:6],
+        audience_sentiment=output.audience_sentiment.strip(),
+        candidate_angles=[angle.name for angle in output.angles][:8],
+        timeline=[item.strip() for item in output.timeline if item.strip()][:10],
+        platform_context=platform_context,
+        concrete_details=[],
+        risk_flags=[item.strip() for item in output.risk_flags if item.strip()][:8],
+        research_gap=research_gap[:8],
+        sources=sources,
+    )
+    return PrepareResearchResponse(
+        research_brief=brief,
+        angle_candidates=_angles_from_research_output(
+            output.angles, payload.topic, verified_claims
+        ),
+        generation_mode="ai",
+        research_model=result.status.model,
+    )
+
+
+_GENERIC_STRUCTURE_SKELETON = [
+    "开头钩子",
+    "事实与细节",
+    "推进与转折",
+    "观点收束",
+    "互动引导",
+]
+
+
+_STRUCTURE_SECTION_MARKERS = ("开头用", "中段按", "情绪节奏控制为", "结尾用")
+
+
+def _extract_section(text: str, start_marker: str, end_markers: list[str]) -> str:
+    """取出 start_marker 之后、最近的 end_marker 之前的内容，并去掉外层引号。"""
+    start = text.find(start_marker)
+    if start < 0:
+        return ""
+    begin = start + len(start_marker)
+    finish = len(text)
+    for marker in end_markers:
+        index = text.find(marker, begin)
+        if 0 <= index < finish:
+            finish = index
+    return text[begin:finish].strip(" 　；;。，「」“”")
+
+
+def _shorten_step(text: str) -> str:
+    candidate = text.strip(" -•\t。；;")
+    candidate = re.sub(r"^第?[一二三四五六七八九十\d]+[.、句]?\s*", "", candidate)
+    if any(marker in candidate for marker in _STRUCTURE_SECTION_MARKERS):
+        return ""
+    # 省略号、"等"这类占位不算步骤
+    if not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", candidate):
+        return ""
+    if candidate in {"...", "…", "等等", "等"}: 
+        return ""
+    if len(candidate) > 22:
+        for mark in ("，", ",", "。", "：", ":", "「", "“"):
+            index = candidate.find(mark)
+            if 5 <= index <= 22:
+                candidate = candidate[:index]
+                break
+        else:
+            candidate = candidate[:22]
+    return candidate.strip(" -•\t。")
+
+
+def _structure_display_parts(
+    skill: TemplatePattern,
+) -> tuple[list[str], str, str, str]:
+    """把结构资产整理成可读的推进骨架。
+
+    已发布 Skill 的 writing_method 是一整段中文说明，直接当 skeleton 会得到
+    无法阅读的长句。这里按"开头 / 中段 / 情绪 / 结尾"解析成可读步骤；
+    解析不出时退回原 skeleton 的短步骤，保证结构始终可用。
+    """
+    raw_steps = [str(step).strip() for step in skill.skeleton if str(step).strip()]
+    # skeleton 由完整 writing_method 切分而来；hook_formula 只是它的截断副本。
+    method_text = " -> ".join(raw_steps) or skill.hook_formula
+
+    hook = (
+        _extract_section(
+            method_text, "开头用", ["先建立观看理由", "；中段", "中段按", "「中段"]
+        )
+        or skill.hook_formula.strip()
+    )
+    middle = _extract_section(
+        method_text, "中段按", ["」推进", "推进；", "；情绪", "情绪节奏控制为"]
+    )
+    emotion_raw = _extract_section(
+        method_text, "情绪节奏控制为", ["」；", "」收束", "；结尾", "结尾用"]
+    )
+    # 骨架与 hook 拼接会把情绪项的 " - " 变成 " - -> "，这里还原成箭头。
+    emotion = re.sub(r"\s*-\s*->\s*", " → ", emotion_raw).strip(" -→")
+    emotion = emotion or skill.emotion_rhythm.strip()
+    ending = (
+        _extract_section(method_text, "结尾用", ["」收束", "收束并引导评论"])
+        or skill.ending_formula.strip()
+    )
+
+    steps: list[str] = []
+    if middle:
+        parts = re.split(
+            r"\s*(?:->|→)\s*|\s+-\s+(?=\d+[.、])|\s+-\s+(?=第[一二三四五六七八九十])",
+            middle,
+        )
+        for part in parts:
+            candidate = _shorten_step(part)
+            if len(candidate) >= 2:
+                steps.append(candidate)
+    if len(steps) < 3:
+        short_steps = [
+            step
+            for step in raw_steps
+            if 2 <= len(step) <= 22
+            and not any(marker in step for marker in _STRUCTURE_SECTION_MARKERS)
+        ]
+        if len(short_steps) >= 3:
+            steps = short_steps
+    deduped: list[str] = []
+    for step in steps:
+        if step not in deduped:
+            deduped.append(step)
+    return deduped[:6], hook, emotion, ending
+
+
+def _generic_structure_recommendation(
+    payload: StructureRecommendationRequest,
+) -> StructureRecommendation:
+    """通用写作骨架：Skill 库为空或匹配失败时始终可用的 fallback。"""
+    selected = [item for item in payload.materials if item.selected]
+    mapping: list[StructureMaterialMapping] = []
+    gaps: list[str] = []
+    step_count = len(_GENERIC_STRUCTURE_SKELETON)
+    for index, step in enumerate(_GENERIC_STRUCTURE_SKELETON):
+        step_materials = [
+            item.id for position, item in enumerate(selected) if position % step_count == index
+        ]
+        mapping.append(
+            StructureMaterialMapping(
+                step=step,
+                material_ids=step_materials[:3],
+                note=(
+                    f"可用 {len(step_materials)} 条素材支撑这一段。"
+                    if step_materials
+                    else "这一段还没有对应素材，需要补充或改用通用推理表达。"
+                ),
+            )
+        )
+        if not step_materials:
+            gaps.append(f"{step}：暂无直接支撑材料。")
+    return StructureRecommendation(
+        id="generic-structure",
+        name="通用写作骨架",
+        kind="generic",
+        skeleton=list(_GENERIC_STRUCTURE_SKELETON),
+        hook_formula="先给观众一个停下来的理由，再交代必要背景。",
+        emotion_rhythm="好奇 → 理解 → 判断",
+        ending_formula="用一句克制的判断或开放问题收束。",
+        why_fits="不依赖任何现成 Skill，按口播通用推进组织内容，保证写稿不被结构匹配阻塞。",
+        material_mapping=mapping,
+        material_gaps=gaps,
+        risk_notes=["通用骨架只保证结构完整，观点和信息增量仍取决于素材与角度本身。"],
+    )
+
+
+def _material_card_from_claim(
+    claim: FactClaim,
+    sources_by_id: dict[str, FactSource],
+    index: int,
+) -> MaterialCard:
+    source_titles = [
+        sources_by_id[source_id].title
+        for source_id in claim.source_ids
+        if source_id in sources_by_id
+    ]
+    primary = sources_by_id.get(claim.source_ids[0]) if claim.source_ids else None
+    return MaterialCard(
+        id=f"material-fact-{index}",
+        type="fact",
+        title=claim.claim[:60],
+        summary=claim.claim,
+        content=claim.claim,
+        source="；".join(source_titles),
+        publisher=primary.publisher if primary else "",
+        published_at=primary.published_at if primary else None,
+        source_url=primary.url if primary else "",
+        verification_status="verified",
+        claim_id=claim.id,
+        relevance_to_angle="第一轮研究已确认的事实，可作为角度的事实底座。",
+        suggested_usage="事实背景段",
+        risk=claim.note or "",
+    )
+
+
+def _fallback_materials_from_brief(
+    payload: MaterialResearchRequest,
+) -> list[MaterialCard]:
+    """联网不可用时：只复用第一轮研究已有内容，不编造新材料。"""
+    brief = payload.research_brief
+    if brief is None:
+        return []
+    sources_by_id = {source.id: source for source in brief.sources}
+    items: list[MaterialCard] = []
+    for index, claim in enumerate(brief.verified_claims, start=1):
+        items.append(_material_card_from_claim(claim, sources_by_id, index))
+    for index, text in enumerate(brief.uncertain_claims[:4], start=1):
+        items.append(
+            MaterialCard(
+                id=f"material-uncertain-{index}",
+                type="background",
+                title=text[:60],
+                summary=text,
+                content=text,
+                verification_status="uncertain",
+                relevance_to_angle="来自第一轮研究但尚未核实，只能作为背景线索。",
+                suggested_usage="背景铺垫（需先核实）",
+                risk="未核实信息，不能写成事实断言。",
+            )
+        )
+    for index, text in enumerate(brief.opinions[:4], start=1):
+        items.append(
+            MaterialCard(
+                id=f"material-opinion-{index}",
+                type="opinion",
+                title=text[:60],
+                summary=text,
+                content=text,
+                verification_status="uncertain",
+                relevance_to_angle="公开观点，可用于呈现讨论氛围，不代表事实。",
+                suggested_usage="观点对照段",
+                risk="只能作为观点引用，不能写成事实。",
+            )
+        )
+    return items[:10]
+
+
+_EVIDENCE_POLICY = [
+    "只允许使用：用户明确输入、SelectedMaterials、与已选素材关联且已逐条核验的 verified_claims。",
+    "禁止使用：uncertain_claims、未选择的 MaterialCard、无来源信息、模型记忆补充的事件事实。",
+]
+
+
+def human_model_error(error: str) -> str:
+    """把底层通道错误转成用户可读的一句话，不泄漏原始日志。"""
+    text = (error or "").lower()
+    if "usage limit" in text or "hit your" in text:
+        return "本机 Codex 用量已达上限"
+    if "websocket prewarm" in text:
+        return "本机 Codex 通道暂时不可用"
+    if "连接重试后仍未返回结果" in error or "responses_retry" in text:
+        return "模型服务暂时无法返回结果"
+    if "timed out" in text or "超时" in error:
+        return "模型调用超时"
+    return "模型调用失败"
+
+
+def _allowed_evidence(
+    payload: ScriptGenerationRequest,
+) -> tuple[dict[str, object], set[str], set[str], list[str]]:
+    """构建 Allowed Evidence，并返回允许使用的素材 / 事实 id 与说明。"""
+    brief = payload.research_brief
+    claims_by_id = (
+        {claim.id: claim for claim in brief.verified_claims} if brief else {}
+    )
+    sources_by_id = (
+        {source.id: source for source in brief.sources} if brief else {}
+    )
+    selected = [item for item in payload.materials if item.selected]
+    allowed_materials: list[dict[str, object]] = []
+    allowed_claims: list[dict[str, object]] = []
+    allowed_claim_ids: set[str] = set()
+    unverified_notes: list[str] = []
+    for card in selected:
+        # 未选中的素材不进入允许清单；观点类素材只能以观点身份使用。
+        is_opinion = card.type in {"opinion", "quote"}
+        allowed_materials.append(
+            {
+                "id": card.id,
+                "type": card.type,
+                "title": card.title,
+                "content": card.content,
+                "source": card.source,
+                "publisher": card.publisher,
+                "published_at": card.published_at,
+                "source_url": card.source_url,
+                "usage": "观点 / 引用（不得写成事实）" if is_opinion else "可用事实或数据",
+                "verification_status": card.verification_status,
+                "suggested_usage": card.suggested_usage,
+            }
+        )
+        if card.claim_id and card.claim_id in claims_by_id:
+            claim = claims_by_id[card.claim_id]
+            if claim.id not in allowed_claim_ids:
+                allowed_claim_ids.add(claim.id)
+                allowed_claims.append(
+                    {
+                        "id": claim.id,
+                        "claim": claim.claim,
+                        "confidence": claim.confidence,
+                        "sources": [
+                            {
+                                "title": sources_by_id[sid].title,
+                                "publisher": sources_by_id[sid].publisher,
+                                "url": sources_by_id[sid].url,
+                            }
+                            for sid in claim.source_ids
+                            if sid in sources_by_id
+                        ],
+                    }
+                )
+        if is_opinion:
+            unverified_notes.append(
+                f"{card.id}（{card.title}）是观点类素材：只能作为观点或引用出现，不得写成事实。"
+            )
+        elif card.verification_status != "verified":
+            unverified_notes.append(
+                f"{card.id}（{card.title}）来源未完全核实：只能作背景铺垫，不得写成确定事实。"
+            )
+    evidence: dict[str, object] = {
+        "user_input": payload.user_material.strip(),
+        "selected_materials": allowed_materials,
+        "allowed_verified_claims": allowed_claims,
+        "notes": [
+            *unverified_notes,
+            "本次没有允许任何未经选择的素材或未核验说法。",
+        ],
+    }
+    allowed_material_ids = {item["id"] for item in allowed_materials}  # type: ignore[union-attr]
+    return evidence, allowed_material_ids, allowed_claim_ids, unverified_notes
+
+
+def _normalize_for_match(text: str) -> str:
+    return re.sub(r"[\s，。！？、；：,.!?;:\"'“”‘’（）()【】\[\]-]", "", text)
+
+
+def _deterministic_unsupported_claims(
+    spoken_script: str,
+    evidence: dict[str, object],
+) -> list[UnsupportedClaim]:
+    """不依赖模型的兜底检查：含数字或专名的句子必须能在证据里找到支撑。"""
+    supported_texts = [_normalize_for_match(str(evidence.get("user_input") or ""))]
+    for item in evidence.get("selected_materials", []) or []:
+        if isinstance(item, dict):
+            supported_texts.append(_normalize_for_match(str(item.get("content") or "")))
+            supported_texts.append(_normalize_for_match(str(item.get("title") or "")))
+    for item in evidence.get("allowed_verified_claims", []) or []:
+        if isinstance(item, dict):
+            supported_texts.append(_normalize_for_match(str(item.get("claim") or "")))
+    corpus = "".join(supported_texts)
+
+    def bigrams(value: str) -> set[str]:
+        return {value[i : i + 2] for i in range(max(0, len(value) - 1))}
+
+    corpus_grams = bigrams(corpus)
+    unsupported: list[UnsupportedClaim] = []
+    # 提问、对冲表达、纯框架句不算事实性陈述，不应被误判。
+    hedge_markers = (
+        "可能", "也许", "或许", "尚需", "还需", "仍需", "还需要", "差不多",
+        "不一定", "取决于", "未证实", "存疑", "有待", "无法确认", "先不展开",
+    )
+    fact_markers = (
+        "显示", "表示", "宣布", "公布", "数据显示", "统计", "报道", "称",
+        "发生", "达到", "共计", "证实", "证明", "记录", "披露", "回应", "发布",
+    )
+    for raw_paragraph in spoken_script.split("\n"):
+        for raw_sentence in re.split(r"(?<=[。！？!?])", raw_paragraph):
+            sentence = raw_sentence.strip()
+            if len(sentence) < 12:
+                continue
+            # 疑问句 / 互动引导不是事实陈述
+            if sentence.endswith(("？", "?")):
+                continue
+            if any(marker in sentence for marker in hedge_markers):
+                continue
+            has_number = bool(re.search(r"\d", sentence))
+            # 没有数字、也没有事实性动词的句子按框架 / 观点处理，不判定为无依据事实。
+            if not has_number and not any(marker in sentence for marker in fact_markers):
+                continue
+            normalized = _normalize_for_match(sentence)
+            grams = bigrams(normalized)
+            if not grams:
+                continue
+            overlap = len(grams & corpus_grams) / len(grams)
+            # 数字型陈述要求更高覆盖率；一般陈述只要能在证据里找到对应表述即可。
+            threshold = 0.62 if has_number else 0.45
+            if overlap < threshold:
+                unsupported.append(
+                    UnsupportedClaim(
+                        text=sentence[:200],
+                        reason=(
+                            "句中含有具体数字，但 Allowed Evidence 无法对应。"
+                            if has_number
+                            else "该陈述在 Allowed Evidence 中找不到对应依据。"
+                        ),
+                        action="removed",
+                    )
+                )
+    return unsupported
+
+
+_PLACEHOLDER_PATTERNS = (
+    r"【[^】]*】",
+    r"\[[^\]]{0,40}(?:补|填|待|材料|案例|观点|数据)[^\]]{0,40}\]",
+    r"（(?:此处|这里|待)(?:补充|填写|添加|补数据)[^）]*）",
+    r"\{\{[^}]*\}\}",
+    r"<[^>]{0,30}(?:placeholder|待补)[^>]{0,30}>",
+)
+
+
+def strip_placeholders(text: str) -> tuple[str, list[str]]:
+    """正文里不允许出现占位符 / 待补提示，命中即删除并记录缺口。"""
+    removed: list[str] = []
+    cleaned = text
+    for pattern in _PLACEHOLDER_PATTERNS:
+        for match in re.findall(pattern, cleaned, flags=re.IGNORECASE):
+            marker = match.strip()
+            if marker and marker not in removed:
+                removed.append(marker)
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+    if removed:
+        # 去掉被删除后的空句子与多余空行，保持正文可读。
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"^[。，、；：\s]+", "", cleaned, flags=re.MULTILINE)
+        cleaned = cleaned.strip()
+    return cleaned, removed
+
+
+def _drop_unsupported_sentences(
+    spoken_script: str,
+    unsupported: list[UnsupportedClaim],
+) -> str:
+    """模型不可用时的确定性降级：直接删除无依据句子。"""
+    if not unsupported:
+        return spoken_script
+    drop_markers = [_normalize_for_match(item.text) for item in unsupported]
+    paragraphs: list[str] = []
+    for raw_paragraph in spoken_script.split("\n"):
+        paragraph = raw_paragraph.strip()
+        if not paragraph:
+            continue
+        sentences = [
+            item.strip()
+            for item in re.split(r"(?<=[。！？!?])", paragraph)
+            if item.strip()
+        ]
+        kept = [
+            sentence
+            for sentence in sentences
+            if not any(
+                marker
+                and (
+                    _normalize_for_match(sentence) in marker
+                    or marker in _normalize_for_match(sentence)
+                )
+                for marker in drop_markers
+            )
+        ]
+        if kept:
+            paragraphs.append("".join(kept))
+    return "\n\n".join(paragraphs).strip()
+
+
+def _script_risk_check(
+    text: str,
+    *,
+    uncertain_claims: list[str],
+    unsupported: list[UnsupportedClaim],
+    forbidden_phrases: list[str],
+) -> RiskCheck:
+    """Phase 4：在基础风险检查之上补充证据类风险，并给出三档结论。"""
+    base = risk_check(text)
+    items = list(base.items)
+    # 未核验说法被确定化的检查：与正文句子做相似度比对，忽略限定语。
+    hedge_markers = ("认为", "有说法", "网传", "据传", "据说", "疑似", "尚需", "仍需", "未证实", "存疑")
+
+    def bigrams(value: str) -> set[str]:
+        return {value[i : i + 2] for i in range(max(0, len(value) - 1))}
+
+    sentences = [
+        item.strip()
+        for item in re.split(r"(?<=[。！？!?])", text)
+        if len(item.strip()) >= 8
+    ]
+    flagged_claims: set[str] = set()
+    for claim in uncertain_claims:
+        normalized_claim = _normalize_for_match(claim)
+        claim_grams = bigrams(normalized_claim)
+        if len(claim_grams) < 4:
+            continue
+        for sentence in sentences:
+            normalized_sentence = _normalize_for_match(sentence)
+            if any(marker in sentence for marker in hedge_markers):
+                continue
+            sentence_grams = bigrams(normalized_sentence)
+            if not sentence_grams:
+                continue
+            overlap = len(claim_grams & sentence_grams) / len(claim_grams)
+            if overlap >= 0.55 and claim not in flagged_claims:
+                flagged_claims.add(claim)
+                items.append(
+                    RiskItem(
+                        label="uncertain-as-fact",
+                        level="high",
+                        reason=f"未核验说法被写成了确定表达：{claim[:60]}",
+                        rewrite="改成“有说法认为……，但仍需核实”，或删除该判断。",
+                    )
+                )
+    for claim in unsupported:
+        items.append(
+            RiskItem(
+                label="unsupported_claim",
+                level="medium",
+                reason=f"无证据事实陈述：{claim.reason}",
+                rewrite=(
+                    "已从初稿移除该陈述。"
+                    if claim.action == "removed"
+                    else "已降级为非确定表达。"
+                ),
+            )
+        )
+    for phrase in forbidden_phrases:
+        if phrase and phrase in text:
+            items.append(
+                RiskItem(
+                    label="客户禁用表达",
+                    level="medium",
+                    reason=f"命中客户禁用表达：{phrase}",
+                    rewrite="按客户要求替换或删除该表达。",
+                )
+            )
+    non_low_items = [item for item in items if item.level != "low"]
+    if any(item.level == "high" for item in non_low_items):
+        return RiskCheck(passed=False, level="high", items=items)
+    if non_low_items:
+        return RiskCheck(passed=False, level="medium", items=items)
+    return RiskCheck(
+        passed=True,
+        level="low",
+        items=[
+            RiskItem(
+                label="证据与基础风控",
+                level="low",
+                reason="未发现无依据事实、隐私、人身攻击或高敏表达。",
+                rewrite="保持当前表达，事实判断处保留限定语。",
+            )
+        ],
+    )
+
+
+def _fallback_complete_script(
+    payload: ScriptGenerationRequest,
+    evidence: dict[str, object],
+    allowed_material_ids: set[str],
+) -> GeneratedScript:
+    """离线兜底：只用 Allowed Evidence 拼出完整可读主稿，不编造事实。"""
+    selected = [item for item in payload.materials if item.selected]
+    paragraphs: list[str] = []
+    fact_lines: list[str] = []
+    opinion_lines: list[str] = []
+    for card in selected:
+        content = card.content.strip()
+        if not content:
+            continue
+        if card.type in {"opinion", "quote"}:
+            opinion_lines.append(f"有一种观点认为，{content}")
+        elif card.type in {"data", "fact"} and card.verification_status == "verified":
+            fact_lines.append(content)
+        else:
+            fact_lines.append(content)
+    if fact_lines:
+        paragraphs.append("".join(fact_lines[:3]))
+    if len(fact_lines) > 3:
+        paragraphs.append("".join(fact_lines[3:6]))
+    if opinion_lines:
+        paragraphs.append("".join(opinion_lines[:2]))
+    cta = "你怎么看这件事？"
+    spoken = "\n\n".join(item for item in paragraphs if item.strip())
+    # 正文必须完整可读：没有任何可用材料时，用一句克制的说明收束，而不是留空。
+    if len(_normalize_for_match(spoken)) < 40:
+        spoken = "这条选题目前能核实的公开材料还不足，先不展开具体判断。"
+        if payload.selected_angle.strip() and not any(
+            marker in payload.selected_angle for marker in ("大量", "已经", "证明")
+        ):
+            spoken = f"{spoken}"
+    spoken = "\n\n".join(item for item in [spoken, cta] if item.strip())
+    gaps = [
+        MaterialGap(gap=item, handling="初稿没有把这一判断写成事实。")
+        for item in payload.structure_gaps[:6]
+    ]
+    for problem in (evidence.get("notes") or []):
+        text = str(problem)
+        if text.startswith("material-") or "未完全核实" in text:
+            gaps.append(
+                MaterialGap(gap=text, handling="只作背景铺垫，未写成确定事实。")
+            )
+    used_claim_ids = sorted(
+        {
+            card.claim_id
+            for card in selected
+            if card.claim_id
+        }
+    )
+    # 兜底稿同样受证据边界约束：无依据句子直接删除（例如把无证据的论点写成事实）。
+    spoken, _placeholder_hits = strip_placeholders(spoken)
+    unsupported = _deterministic_unsupported_claims(spoken, evidence)
+    if unsupported:
+        spoken = _drop_unsupported_sentences(spoken, unsupported)
+        spoken = re.sub(r"\n{3,}", "\n\n", spoken).strip()
+        for item in unsupported:
+            item.action = "removed"
+    gaps.extend(
+        MaterialGap(
+            gap=item.text[:200],
+            handling="初稿没有把这条无证据陈述写进正文。",
+        )
+        for item in unsupported
+    )
+    # 兜底标题用选题本身，避免把结构模板式的角度文案当成标题。
+    fallback_title = payload.topic.strip()[:30] or payload.selected_angle.strip()[:30]
+    return GeneratedScript(
+        id=new_id("script"),
+        title=fallback_title,
+        title_candidates=[],
+        account_type=payload.account_type,
+        content_angle=payload.selected_angle,
+        duration_seconds=payload.duration_seconds,
+        spoken_script=spoken,
+        shot_suggestions=[],
+        subtitle_rhythm=[],
+        comment_cta=cta,
+        risk_check=_script_risk_check(
+            spoken,
+            uncertain_claims=[],
+            unsupported=[],
+            forbidden_phrases=[],
+        ),
+        template_used=payload.structure_name,
+        preset_application=[],
+        production_status="draft",
+        version_label="v1",
+        used_material_ids=sorted(allowed_material_ids),
+        used_claim_ids=used_claim_ids,
+        material_gaps=gaps,
+        evidence_map=[],
+        evidence_check=EvidenceCheckResult(
+            passed=not unsupported,
+            unsupported_claims=unsupported,
+            notes=[
+                f"本地兜底稿：允许使用的素材 {len(allowed_material_ids)} 条、已核验事实 {len(used_claim_ids)} 条。",
+                "未联网、未补充新事实；无依据句子已从正文删除。",
+            ],
+            checked_at=datetime.now(timezone.utc),
+        ),
+        structure_coverage=[],
+        evidence_policy=_EVIDENCE_POLICY,
+    )
+
+
+def generate_complete_script(
+    payload: ScriptGenerationRequest,
+) -> ScriptGenerationResponse:
+    """Phase 4：生成完整可编辑主稿 + 证据追踪 + 证据检查 + 风险检查。"""
+    from app.workbench_llm import (
+        generate_complete_script_structured,
+        get_llm_config,
+        repair_script_evidence_structured,
+    )
+
+    evidence, allowed_material_ids, allowed_claim_ids, unverified_notes = (
+        _allowed_evidence(payload)
+    )
+    config = get_llm_config()
+    if config.mode == "offline":
+        script = _fallback_complete_script(payload, evidence, allowed_material_ids)
+        return ScriptGenerationResponse(
+            script=script,
+            generation_mode="fallback",
+            model=None,
+            evidence_policy=_EVIDENCE_POLICY,
+            note="研究/写作模型未启用：本次用 Allowed Evidence 本地拼稿，未联网、未补充新事实。",
+        )
+
+    result = generate_complete_script_structured(payload, evidence, config)
+    output = result.output
+    if output is None:
+        script = _fallback_complete_script(payload, evidence, allowed_material_ids)
+        return ScriptGenerationResponse(
+            script=script,
+            generation_mode="fallback",
+            model=result.status.model,
+            evidence_policy=_EVIDENCE_POLICY,
+            note=(
+                "模型未返回可用初稿，已回退为 Allowed Evidence 本地拼稿。"
+                + (f"（{human_model_error(result.error)}）" if result.error else "")
+            ),
+        )
+
+    # 只接受真实存在的 id，避免模型虚报使用范围。
+    used_material_ids = [
+        item for item in output.used_material_ids if item in allowed_material_ids
+    ]
+    used_claim_ids = [
+        item for item in output.used_claim_ids if item in allowed_claim_ids
+    ]
+    spoken = output.spoken_script.strip()
+
+    # --- Evidence Check ---
+    unsupported = _deterministic_unsupported_claims(spoken, evidence)
+    repair = repair_script_evidence_structured(
+        spoken_script=spoken,
+        request=payload,
+        evidence=evidence,
+        already_used_material_ids=used_material_ids,
+        config=config,
+    )
+    if repair is not None:
+        spoken = repair.revised_spoken_script.strip()
+        unsupported = [
+            UnsupportedClaim(
+                text=item.text.strip()[:400],
+                reason=item.reason.strip()[:300],
+                action=(
+                    item.action.strip()
+                    if item.action.strip() in {"removed", "downgraded", "kept_as_opinion"}
+                    else "removed"
+                ),
+            )
+            for item in repair.unsupported_claims
+        ]
+    # 无论模型复核是否报告问题，都对最终正文做一次确定性检查：
+    # 模型可能漏掉自己写出的无依据陈述。
+    remaining = _deterministic_unsupported_claims(spoken, evidence)
+    if remaining:
+        drop_targets = {item.text for item in remaining}
+        spoken = _drop_unsupported_sentences(spoken, remaining)
+        for item in remaining:
+            if all(existing.text != item.text for existing in unsupported):
+                unsupported.append(item)
+        for item in unsupported:
+            if item.text in drop_targets:
+                item.action = "removed"
+    # 占位符绝不允许出现在正文里。
+    spoken, placeholder_hits = strip_placeholders(spoken)
+    # 删除后可能出现连续空行 / 前后空白，做一次轻量规整。
+    spoken = re.sub(r"\n{3,}", "\n\n", spoken).strip()
+    # 正文必须完整可读：过滤之后过短说明可用证据不足，改为克制的完整短稿。
+    if len(_normalize_for_match(spoken)) < 40:
+        selected_for_repair = [item for item in payload.materials if item.selected]
+        safe_lines = [
+            re.sub(r"\s+", "", item.content)[:120]
+            for item in selected_for_repair
+            if item.content.strip()
+            and item.type not in {"opinion", "quote"}
+            and item.verification_status == "verified"
+        ]
+        safe_body = "".join(safe_lines[:2])
+        if not safe_body:
+            safe_body = "这条选题目前能核实的公开材料还不足，先不展开具体判断。"
+        spoken = "\n\n".join(
+            part for part in [safe_body, (output.comment_cta or "").strip()] if part
+        )
+
+    gaps = [
+        MaterialGap(gap=item.gap.strip(), handling=item.handling.strip())
+        for item in output.material_gaps
+        if item.gap.strip()
+    ]
+    if repair is not None:
+        for item in repair.material_gaps:
+            if item.gap.strip() and all(
+                existing.gap != item.gap.strip() for existing in gaps
+            ):
+                gaps.append(
+                    MaterialGap(
+                        gap=item.gap.strip(),
+                        handling=item.handling.strip() or "初稿没有把该判断写成事实。",
+                    )
+                )
+    for note in unverified_notes:
+        if all(note not in existing.gap for existing in gaps):
+            gaps.append(MaterialGap(gap=note, handling="只作背景铺垫，未写成确定事实。"))
+    for marker in placeholder_hits:
+        gaps.append(
+            MaterialGap(
+                gap=f"初稿曾出现待补占位：{marker}",
+                handling="已从正文删除；该处未写成事实，避免留下未完成内容。",
+            )
+        )
+
+    # 风险检查只反映最终正文：已删除 / 已降级的陈述作为处理记录保留在
+    # evidence_check 里，不再当作“当前仍存在的问题”。
+    remaining_after_fix = _deterministic_unsupported_claims(spoken, evidence)
+    risk = _script_risk_check(
+        spoken,
+        uncertain_claims=(
+            payload.research_brief.uncertain_claims if payload.research_brief else []
+        ),
+        unsupported=remaining_after_fix,
+        forbidden_phrases=[],
+    )
+    valid_sections = set(payload.structure_steps)
+    evidence_map = [
+        ScriptEvidenceLink(
+            section=item.section,
+            material_ids=[
+                mid for mid in item.material_ids if mid in allowed_material_ids
+            ],
+            claim_ids=[cid for cid in item.claim_ids if cid in allowed_claim_ids],
+            note=item.note,
+        )
+        for item in output.evidence_map
+        if item.section in valid_sections or not valid_sections
+    ]
+    script = GeneratedScript(
+        id=new_id("script"),
+        title=output.title.strip(),
+        title_candidates=[
+            item.strip() for item in output.title_candidates if item.strip()
+        ][:3],
+        account_type=payload.account_type,
+        content_angle=payload.selected_angle,
+        duration_seconds=payload.duration_seconds,
+        spoken_script=spoken,
+        shot_suggestions=[
+            item.strip() for item in output.shot_suggestions if item.strip()
+        ][:10],
+        subtitle_rhythm=[
+            item.strip() for item in output.subtitle_rhythm if item.strip()
+        ][:30],
+        comment_cta=output.comment_cta.strip(),
+        risk_check=risk,
+        template_used=payload.structure_name,
+        preset_application=[],
+        production_status="draft",
+        version_label="v1",
+        used_material_ids=used_material_ids,
+        used_claim_ids=used_claim_ids,
+        material_gaps=gaps,
+        evidence_map=evidence_map,
+        evidence_check=EvidenceCheckResult(
+            passed=not unsupported,
+            unsupported_claims=unsupported,
+            notes=[
+                f"允许使用的素材 {len(allowed_material_ids)} 条、已核验事实 {len(allowed_claim_ids)} 条。",
+                "证据检查只使用已选素材与已核验事实，未联网、未补充新事实。",
+            ],
+            checked_at=datetime.now(timezone.utc),
+        ),
+        structure_coverage=[
+            item.strip() for item in output.structure_coverage if item.strip()
+        ][:12],
+        evidence_policy=_EVIDENCE_POLICY,
+    )
+    return ScriptGenerationResponse(
+        script=script,
+        generation_mode="ai",
+        model=result.status.model,
+        evidence_policy=_EVIDENCE_POLICY,
+        note="已生成一篇完整主稿；事实依据与材料缺口见 evidence 字段（不进正文）。",
+    )
+
+
+def research_angle_materials(
+    payload: MaterialResearchRequest,
+) -> MaterialResearchResponse:
+    """Phase 3：围绕 SelectedAngle 的第二轮定向联网研究。"""
+    from app.workbench_llm import (
+        get_llm_config,
+        research_materials_structured,
+    )
+
+    config = get_llm_config()
+    missing = [item for item in payload.angle_missing_evidence if item.strip()]
+    guidance = (
+        "本轮只围绕已选角度找材料：优先补齐角度里标注的缺失证据，"
+        "并说明每张素材卡为什么对这个角度有用。"
+    )
+    if config.mode == "offline":
+        return MaterialResearchResponse(
+            materials=_fallback_materials_from_brief(payload),
+            generation_mode="fallback",
+            guidance=guidance,
+            stop_reason="研究模型未启用：本轮未联网，只复用第一轮研究已有内容。",
+            reused_source_count=len(payload.research_brief.sources)
+            if payload.research_brief
+            else 0,
+        )
+
+    result = research_materials_structured(payload)
+    output = result.output
+    if output is None:
+        return MaterialResearchResponse(
+            materials=_fallback_materials_from_brief(payload),
+            generation_mode="fallback",
+            research_model=result.status.model,
+            guidance=guidance,
+            stop_reason=(
+                "定向联网研究未完成，已回退为复用第一轮研究内容。"
+                + (f"（{human_model_error(result.error)}）" if result.error else "")
+            ),
+            reused_source_count=len(payload.research_brief.sources)
+            if payload.research_brief
+            else 0,
+        )
+
+    known_urls = (
+        {source.url for source in payload.research_brief.sources}
+        if payload.research_brief
+        else set()
+    )
+    # 第二轮素材若来自第一轮已打开过的来源，尽量挂回对应的已核验事实，
+    # 使成稿阶段的证据链可以一路追溯到 claim → source。
+    url_to_claim_id: dict[str, str] = {}
+    if payload.research_brief is not None:
+        source_id_to_url = {
+            source.id: source.url for source in payload.research_brief.sources
+        }
+        for claim in payload.research_brief.verified_claims:
+            for source_id in claim.source_ids:
+                url = source_id_to_url.get(source_id)
+                if url and url not in url_to_claim_id:
+                    url_to_claim_id[url] = claim.id
+    materials: list[MaterialCard] = []
+    for index, item in enumerate(output.materials, start=1):
+        url = item.source_url.strip()
+        usable_url = url if url.startswith(("https://", "http://")) else ""
+        raw_status = item.verification_status.strip().lower()
+        if raw_status not in {"verified", "uncertain", "preview"}:
+            raw_status = "uncertain"
+        # 没有可用来源时一律降级为 uncertain，避免伪装成已核实。
+        status: Literal["verified", "uncertain", "preview"] = (
+            raw_status if usable_url else "uncertain"  # type: ignore[assignment]
+        )
+        linked_claim_id = (
+            url_to_claim_id.get(usable_url)
+            if status == "verified" and item.type not in {"opinion", "quote"}
+            else None
+        )
+        materials.append(
+            MaterialCard(
+                id=f"material-{index}",
+                type=item.type,
+                title=item.title.strip(),
+                summary=item.summary.strip(),
+                content=item.content.strip(),
+                source=item.source.strip(),
+                publisher=item.publisher.strip(),
+                published_at=item.published_at,
+                source_url=usable_url,
+                verification_status=status,
+                claim_id=linked_claim_id,
+                relevance_to_angle=item.relevance_to_angle.strip(),
+                suggested_usage=item.suggested_usage.strip(),
+                risk=item.risk.strip(),
+            )
+        )
+    reused = sum(1 for item in materials if item.source_url in known_urls)
+    return MaterialResearchResponse(
+        materials=materials,
+        generation_mode="ai",
+        research_model=result.status.model,
+        guidance=guidance,
+        stop_reason=output.stop_reason.strip() or "已收集到足以支撑该角度的材料。",
+        reused_source_count=reused if isinstance(reused, int) else 0,
+    )
+
+
+def _deterministic_structure_reason(
+    skill: TemplatePattern,
+    payload: StructureRecommendationRequest,
+    selected: list[MaterialCard],
+    steps: list[str],
+) -> tuple[str, list[StructureMaterialMapping], list[str]]:
+    mapping: list[StructureMaterialMapping] = []
+    gaps: list[str] = []
+    step_count = max(1, len(steps))
+    for index, step in enumerate(steps):
+        step_materials = [
+            item.id for position, item in enumerate(selected) if position % step_count == index
+        ]
+        mapping.append(
+            StructureMaterialMapping(
+                step=step,
+                material_ids=step_materials[:3],
+                note=(
+                    f"{len(step_materials)} 条已选素材可放进这一步。"
+                    if step_materials
+                    else "这一步暂时没有对应素材。"
+                ),
+            )
+        )
+        if not step_materials:
+            gaps.append(f"{step}：暂无直接支撑材料。")
+    chain = " → ".join(steps)
+    why = (
+        f"这个结构的推进方式（{chain}）与「{payload.selected_angle[:40]}」"
+        f"的论证路径接近，适合用你选中的 {len(selected)} 条素材逐段推进。"
+        if selected
+        else (
+            f"这个结构的推进方式（{chain}）适合该角度，"
+            "但你还没有选择素材，推进主要依赖通用推理。"
+        )
+    )
+    return why, mapping, gaps
+
+
+def recommend_structures(
+    payload: StructureRecommendationRequest,
+) -> StructureRecommendationResponse:
+    """Phase 3：基于 Topic + SelectedAngle + SelectedMaterials 推荐结构。"""
+    selected = [item for item in payload.materials if item.selected]
+    generic = _generic_structure_recommendation(payload)
+
+    material_context = "\n".join(
+        f"{item.type}：{item.title}｜{item.summary or item.content[:120]}"
+        for item in selected
+    )
+    context = "\n".join(
+        part
+        for part in [
+            f"选题：{payload.topic}",
+            f"内容角度：{payload.selected_angle}",
+            f"研究摘要：{payload.research_summary}",
+            f"已选素材：\n{material_context}" if material_context else "",
+        ]
+        if part
+    )
+    match_payload = DraftInputRequest(
+        title=payload.topic,
+        content=context,
+        input_type="hotspot",
+        account_type=payload.account_type,
+        duration_seconds=payload.duration_seconds,
+        tone=payload.tone,
+        goal=payload.goal,
+        material_text=material_context,
+        selected_angle=payload.selected_angle,
+        angle_mode="recommended",
+    )
+    candidates = match_writing_skills(match_payload, use_model=False)[:3]
+
+    from app.workbench_llm import (
+        explain_structures_structured,
+        get_llm_config,
+        local_codex_model_label,
+    )
+
+    config = get_llm_config()
+    parsed_candidates: list[tuple[object, list[str], str, str, str]] = []
+    for match in candidates:
+        steps, hook, emotion, ending = _structure_display_parts(match.skill)
+        if len(steps) < 3:
+            # 骨架无法整理成可读步骤：不进入推荐，避免给出不可用结构。
+            continue
+        parsed_candidates.append((match, steps, hook, emotion, ending))
+    candidate_payloads = [
+        {
+            "id": match.skill.id,
+            "name": match.skill.name,
+            "skeleton": steps,
+        }
+        for match, steps, _hook, _emotion, _ending in parsed_candidates
+    ]
+    generic_payload = {"id": generic.id, "name": generic.name}
+    explanations = explain_structures_structured(
+        payload, candidate_payloads, generic_payload, config
+    )
+    explanation_by_id = (
+        {item.structure_id: item for item in explanations.explanations}
+        if explanations
+        else {}
+    )
+
+    recommendations: list[StructureRecommendation] = []
+    for match, steps, hook, emotion, ending in parsed_candidates:
+        skill = match.skill
+        why, mapping, gaps = _deterministic_structure_reason(
+            skill, payload, selected, steps
+        )
+        risk_notes = [skill.risk_boundary] if skill.risk_boundary else []
+        explanation = explanation_by_id.get(skill.id)
+        if explanation is not None:
+            why = explanation.why_fits.strip() or why
+            if explanation.material_mapping:
+                # 只接受属于该结构的骨架步骤，以及真实存在的素材 id。
+                valid_steps = set(steps)
+                valid_ids = {item.id for item in selected}
+                valid_entries = [
+                    StructureMaterialMapping(
+                        step=item.step,
+                        material_ids=[
+                            mid for mid in item.material_ids if mid in valid_ids
+                        ],
+                        note=item.note,
+                    )
+                    for item in explanation.material_mapping
+                    if item.step in valid_steps
+                ]
+                # 模型可能返回无法对应的素材 id：只有当它确实挂上了真实素材，
+                # 才用模型映射替换本地映射，否则保留已选素材的本地映射。
+                if any(entry.material_ids for entry in valid_entries):
+                    mapping = valid_entries
+            if explanation.material_gaps:
+                gaps = [item.strip() for item in explanation.material_gaps if item.strip()]
+            if explanation.risk_notes:
+                risk_notes = [
+                    item.strip() for item in explanation.risk_notes if item.strip()
+                ]
+        recommendations.append(
+            StructureRecommendation(
+                id=skill.id,
+                name=skill.name,
+                kind="skill",
+                skeleton=steps,
+                hook_formula=hook,
+                emotion_rhythm=emotion,
+                ending_formula=ending,
+                why_fits=why,
+                material_mapping=mapping,
+                material_gaps=gaps,
+                risk_notes=risk_notes,
+            )
+        )
+
+    model_label = local_codex_model_label() or config.model
+    note = (
+        "已按已选角度与素材给出推荐结构；通用结构始终可用。"
+        if recommendations
+        else "当前没有可用的现成结构，已提供通用写作骨架，可以继续写作。"
+    )
+    return StructureRecommendationResponse(
+        recommendations=recommendations,
+        generic_structure=generic,
+        generation_mode="ai" if explanations else "fallback",
+        model=model_label if config.mode != "offline" else None,
+        note=note,
+    )
+
+
+def prepare_draft(payload: PrepareDraftRequest) -> PrepareDraftResponse:
+    """Legacy（v1 流程）：研究 + 角度 + Skill 匹配耦合在同一步返回。
+
+    新创作主线请使用 ``prepare_research`` / ``POST /research/briefs``：
+    研究阶段只产出研究简报与角度候选，结构匹配推迟到 SelectedAngle 之后。
+    """
+    bootstrap_templates()
+    content = "\n".join(item for item in [payload.topic, payload.material_text] if item.strip())
+    draft_payload = DraftInputRequest(
+        title=payload.topic,
+        content=content,
+        input_type="hotspot",
+        account_type=payload.account_type,
+        duration_seconds=payload.duration_seconds,
+        tone=payload.tone,
+        goal=payload.goal,
+        material_text=payload.material_text,
+    )
+
+    verified_facts = [
+        line.strip(" -•")
+        for line in payload.material_text.splitlines()
+        if len(line.strip()) >= 8
+    ][:8]
+    research_gap: list[str] = []
+    sources: list[FactSource] = []
+    if not payload.material_text.strip():
+        research_gap.append("尚未提供可核实素材；涉及当前事件的事实需要补充来源。")
+    if payload.source_url:
+        research_gap.append("用户来源链接已记录，正式事实核查时需要打开并确认页面内容。")
+
+    from app.workbench_llm import fact_verification_required, get_llm_config
+
+    config = get_llm_config()
+    if fact_verification_required(draft_payload) and config.mode != "offline":
+        from app.workbench_llm import verify_major_claim_structured
+
+        verification = verify_major_claim_structured(draft_payload)
+        verified_facts = verification.verified_facts[:8] or verified_facts
+        sources = [
+            FactSource(
+                title=item.title,
+                url=item.url,
+                publisher=item.publisher,
+                published_at=item.published_at,
+            )
+            for item in verification.sources
+        ]
+        if verification.verdict != "verified":
+            research_gap.append(verification.summary or "公开来源不足，生成前需要补充核验。")
+
+    brief = ResearchBrief(
+        input_type="hotspot",
+        user_goal=payload.goal,
+        verified_facts=verified_facts,
+        timeline=[],
+        platform_context=["抖音短视频口播", f"目标时长 {payload.duration_seconds} 秒"],
+        concrete_details=verified_facts[:4],
+        risk_flags=["未经核实的事实不可直接写成断言"] if research_gap else [],
+        research_gap=research_gap,
+        sources=sources,
+    )
+    base = payload.topic.strip()
+    angle_candidates = [
+        AngleCandidate(
+            id="angle-contrast",
+            name="表面反差",
+            thesis=f"从“大家以为的结果”和“公开信息里的真实细节”之间切入：{base}",
+            reason="适合需要前几秒建立观看理由、同时保留事实边界的热点。",
+            required_facts=["一个可核实的结果或变化", "一个具体细节"],
+            risk_notes=["不要把传言当成反差依据"],
+        ),
+        AngleCandidate(
+            id="angle-mechanism",
+            name="过程与原因",
+            thesis=f"不只复述发生了什么，而是解释这件事为什么会走到今天：{base}",
+            reason="适合素材有时间线、阻碍或多方反应的主题。",
+            required_facts=["关键时间节点", "公开回应或过程证据"],
+            risk_notes=["因果关系必须有来源支持"],
+        ),
+        AngleCandidate(
+            id="angle-opinion",
+            name="个人判断",
+            thesis=f"把事实放在前面，再明确说出你真正想讨论的判断：{base}",
+            reason="适合你已有明确态度、希望引发评论讨论的主题。",
+            required_facts=["支持判断的公开事实", "需要回避的争议细节"],
+            risk_notes=["区分事实、推测和个人观点"],
+        ),
+    ]
+    matches = match_writing_skills(draft_payload, use_model=False)
+    return PrepareDraftResponse(
+        research_brief=brief,
+        angle_candidates=angle_candidates,
+        matched_skills=matches[:3],
+        generation_mode="fallback" if config.mode == "offline" else "ai",
+        sources=sources,
+    )
 
 
 def generate_hotspot(payload: GenerateHotspotRequest) -> GenerateHotspotResponse:
