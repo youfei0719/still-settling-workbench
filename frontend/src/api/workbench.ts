@@ -7,6 +7,15 @@ import type {
   DraftRewritePayload,
   DraftRewriteResponse,
   DraftRewriteTask,
+  PrepareDraftPayload,
+  PrepareDraftResponse,
+  PrepareResearchResponse,
+  MaterialResearchPayload,
+  MaterialResearchResponse,
+  ScriptGenerationPayload,
+  ScriptGenerationResponse,
+  StructureRecommendationPayload,
+  StructureRecommendationResponse,
   ExternalGateReport,
   GeneratedScript,
   GeneratedScriptUpdatePayload,
@@ -446,6 +455,48 @@ export function rewriteDraft(payload: DraftRewritePayload) {
 
 export function startDraftRewriteTask(payload: DraftRewritePayload) {
   return request<DraftRewriteTask>("/drafts/rewrite-tasks", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function prepareDraft(payload: PrepareDraftPayload) {
+  return request<PrepareDraftResponse>("/drafts/prepare", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+/**
+ * Phase 2 主流程：只做研究 + 角度候选，不做结构匹配。
+ * 旧的 /drafts/prepare 保持兼容（legacy），不再被创作主流程调用。
+ */
+export function prepareResearch(payload: PrepareDraftPayload) {
+  return request<PrepareResearchResponse>("/research/briefs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** Phase 3：围绕 SelectedAngle 的第二轮定向联网研究。 */
+export function researchAngleMaterials(payload: MaterialResearchPayload) {
+  return request<MaterialResearchResponse>("/research/materials", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** Phase 4：按 Allowed Evidence 生成完整主稿。 */
+export function generateCompleteScript(payload: ScriptGenerationPayload) {
+  return request<ScriptGenerationResponse>("/scripts/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** Phase 3：基于 SelectedAngle + SelectedMaterials 推荐结构。 */
+export function recommendStructures(payload: StructureRecommendationPayload) {
+  return request<StructureRecommendationResponse>("/structures/recommend", {
     method: "POST",
     body: JSON.stringify(payload),
   })

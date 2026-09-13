@@ -1,3 +1,11 @@
+/**
+ * Legacy：旧「热点反推室」交互（先选 Skill、再生成结构工作稿）。
+ *
+ * Phase 1 起：
+ * - 不再出现在主导航；
+ * - 不再接入 WritingProject 创作主线（ContentWorkflow）。
+ * - 文件与全部旧实现暂时保留，等新流程经过真实选题验证后再决定清理。
+ */
 import {
   Check,
   ChevronDown,

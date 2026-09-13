@@ -13,6 +13,7 @@ import {
   fetchServerMediaTask,
   fetchVideoExtractionTask,
   fetchVideoExtractionTasks,
+  updateGeneratedScript,
   publishCodexSkillPackToGithub,
   retryVideoExtractionTask,
   startServerMediaTask,
@@ -24,11 +25,13 @@ import {
   WorkbenchApiError,
 } from "@/api/workbench"
 import { fallbackOverview } from "@/data/fallback"
+import { createWritingProject } from "@/lib/writingProject"
 import type {
   AnalyzeTextResponse,
   CodexSkillPackResponse,
   CodexSkillPublishResponse,
   ExternalGateReport,
+  GeneratedScript,
   LinkTaskResponse,
   LocalSettingsStatus,
   ModelRuntimeStatus,
@@ -41,9 +44,14 @@ import type {
   VideoUploadResponse,
   WorkbenchOverview,
   WritingPresetCreatePayload,
+  WritingProjectState,
 } from "@/types/workbench"
 import { AnalysisWorkspace } from "./components/workbench/AnalysisWorkspace"
 import { AppShell, type PageKey } from "./components/workbench/AppShell"
+import { ContentWorkflow } from "./components/workbench/ContentWorkflow"
+import { ProjectsPanel } from "./components/workbench/ProjectsPanel"
+import { ReferenceLibraryPanel } from "./components/workbench/ReferenceLibraryPanel"
+import { SkillFactoryHome } from "./components/workbench/SkillFactoryHome"
 import { CodexSyncPanel } from "./components/workbench/CodexSyncPanel"
 import { InitialSetupPanel } from "./components/workbench/InitialSetupPanel"
 import { LinkConsole } from "./components/workbench/LinkConsole"
@@ -121,7 +129,7 @@ function linkTaskFromServerMediaTask(task: ServerMediaTask): LinkTaskResponse {
 }
 
 export default function App() {
-  const [page, setPage] = useState<PageKey>("link")
+  const [page, setPage] = useState<PageKey>("create")
   const [overview, setOverview] = useState<WorkbenchOverview>(fallbackOverview)
   const [skillPack, setSkillPack] = useState<CodexSkillPackResponse | null>(
     null,
@@ -170,6 +178,14 @@ export default function App() {
     useState<ExternalGateReport | null>(null)
   const [externalGateLoading, setExternalGateLoading] = useState(false)
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
+  const [draftResult, setDraftResult] = useState<import("@/types/workbench").DraftRewriteResponse | null>(null)
+  const [selectedDraftScript, setSelectedDraftScript] = useState<GeneratedScript | null>(null)
+
+  // Phase 1：WritingProject 仅保存在前端内存（App 持有），刷新即清空。
+  const [writingProjects, setWritingProjects] = useState<WritingProjectState[]>([])
+  const [activeWritingProjectId, setActiveWritingProjectId] = useState<
+    string | null
+  >(null)
 
   const refreshVideoExtractionTasks = useCallback(async () => {
     try {
@@ -706,7 +722,73 @@ export default function App() {
     )
   }
 
+  const activeWritingProject =
+    writingProjects.find((item) => item.id === activeWritingProjectId) || null
+
+  const startWritingProject = (topic: string, supplement: string) => {
+    const project = createWritingProject(topic, supplement)
+    setWritingProjects((current) => [project, ...current])
+    setActiveWritingProjectId(project.id)
+    setPage("create")
+    return project
+  }
+
+  const updateWritingProject = (
+    projectId: string,
+    patch: Partial<WritingProjectState>,
+  ) => {
+    setWritingProjects((current) =>
+      current.map((item) =>
+        item.id === projectId
+          ? { ...item, ...patch, updatedAt: new Date().toISOString() }
+          : item,
+      ),
+    )
+  }
+
+  const openWritingProject = (projectId: string) => {
+    setActiveWritingProjectId(projectId)
+    setPage("create")
+  }
+
+  const startNewWritingProject = () => {
+    setActiveWritingProjectId(null)
+    setPage("create")
+  }
+
+  const templateLibraryPage = (
+    <TemplateLibrary
+      templates={mergedOverview.templates}
+      selectedTemplateId={selectedTemplateId}
+      onReviewTemplate={handleReviewTemplate}
+      onGovernSkill={handleGovernSkill}
+      onApproveAndPublish={handleApproveAndPublishSkill}
+      onContinueEvidence={handleContinueEvidence}
+    />
+  )
+
   const content = {
+    create: (
+      <ContentWorkflow
+        project={activeWritingProject}
+        templates={mergedOverview.templates}
+        onStartProject={startWritingProject}
+        onProjectChange={updateWritingProject}
+        onNewProject={startNewWritingProject}
+        onOpenStructures={() => setPage("structures")}
+        onToast={setToast}
+      />
+    ),
+    projects: (
+      <ProjectsPanel
+        projects={writingProjects}
+        onOpenProject={openWritingProject}
+        onNewProject={startNewWritingProject}
+      />
+    ),
+    structures: templateLibraryPage,
+    references: <ReferenceLibraryPanel />,
+    factory: <SkillFactoryHome onNavigate={setPage} />,
     link: (
       <LinkConsole
         url={url}
@@ -751,17 +833,28 @@ export default function App() {
         preselectedMergeTargetId={evidenceTargetId}
       />
     ),
-    templates: (
-      <TemplateLibrary
-        templates={mergedOverview.templates}
-        selectedTemplateId={selectedTemplateId}
-        onReviewTemplate={handleReviewTemplate}
-        onGovernSkill={handleGovernSkill}
-        onApproveAndPublish={handleApproveAndPublishSkill}
-        onContinueEvidence={handleContinueEvidence}
+    templates: templateLibraryPage,
+    review: (
+      <ReviewExport
+        analysis={analysis}
+        hotspotResult={draftResult}
+        selectedScript={selectedDraftScript}
+        generatedScripts={draftResult?.scripts || mergedOverview.generated_scripts}
+        onSelectScript={(script) => setSelectedDraftScript(script)}
+        onUpdateScript={async (scriptId, payload) => {
+          const updated = await updateGeneratedScript(scriptId, payload)
+          setDraftResult((current) => current ? { ...current, scripts: current.scripts.map((script) => script.id === updated.id ? updated : script) } : current)
+          setSelectedDraftScript(updated)
+          return updated
+        }}
+        onToast={setToast}
+        externalGates={externalGates}
+        externalGateLoading={externalGateLoading}
+        onRefreshExternalGates={refreshExternalGates}
+        onCreateHumanReviewTemplate={handleCreateHumanReviewTemplate}
       />
     ),
-    diagnostics: (
+    settings: (
       <div className="page-grid diagnostics-layout">
         <InitialSetupPanel onSettingsChanged={setLocalSettings} />
         <CodexSyncPanel

@@ -229,6 +229,59 @@ export interface RiskCheck {
   items: RiskItem[]
 }
 
+/** Phase 4：段落 → 素材 / 事实 的对应关系（不进正文）。 */
+export interface ScriptEvidenceLink {
+  section: string
+  material_ids: string[]
+  claim_ids: string[]
+  note: string
+}
+
+export interface MaterialGap {
+  gap: string
+  handling: string
+}
+
+export interface UnsupportedClaim {
+  text: string
+  reason: string
+  action: "removed" | "downgraded" | "kept_as_opinion"
+}
+
+export interface EvidenceCheckResult {
+  passed: boolean
+  unsupported_claims: UnsupportedClaim[]
+  notes: string[]
+  checked_at?: string | null
+}
+
+export interface ScriptGenerationPayload {
+  topic: string
+  user_material?: string
+  selected_angle: string
+  angle_name?: string
+  structure_id: string
+  structure_name: string
+  structure_steps: string[]
+  structure_mapping: StructureMaterialMapping[]
+  structure_gaps: string[]
+  materials: MaterialCard[]
+  research_brief?: ResearchBrief | null
+  account_type: string
+  duration_seconds: number
+  tone: string
+  goal: string
+  generation_notes?: string
+}
+
+export interface ScriptGenerationResponse {
+  script: GeneratedScript
+  generation_mode: "ai" | "fallback"
+  model?: string | null
+  evidence_policy: string[]
+  note: string
+}
+
 export interface GeneratedScript {
   id: string
   title: string
@@ -247,6 +300,15 @@ export interface GeneratedScript {
   editor_note?: string | null
   updated_at?: string | null
   version_history?: GeneratedScriptVersion[]
+  /** Phase 4：完整成稿的证据追踪。 */
+  title_candidates?: string[]
+  used_material_ids?: string[]
+  used_claim_ids?: string[]
+  material_gaps?: MaterialGap[]
+  evidence_map?: ScriptEvidenceLink[]
+  evidence_check?: EvidenceCheckResult
+  structure_coverage?: string[]
+  evidence_policy?: string[]
 }
 
 export interface GeneratedScriptVersion {
@@ -594,6 +656,281 @@ export interface GenerateHotspotResponse {
   scripts: GeneratedScript[]
 }
 
+export interface ResearchBrief {
+  input_type: string
+  user_goal: string
+  /**
+   * Phase 1: extended in place so the same “研究简报 / Research Brief”
+   * can carry everything the creation flow needs. Older responses simply
+   * omit these fields, so they are optional on the client.
+   */
+  summary?: string
+  /**
+   * Phase 1 修复：默认为 preview（仅整理用户输入，未联网核验）。
+   * 只有 Phase 2 真实联网研究取到可靠来源后，才允许显示“已确认事实”。
+   */
+  verification_status?: "preview" | "partial" | "verified"
+  verification_note?: string
+  verified_facts: string[]
+  /** Phase 3：verified_facts 的可追溯视图（含 source_ids）。 */
+  verified_claims?: FactClaim[]
+  uncertain_claims?: string[]
+  opinions?: string[]
+  controversies?: string[]
+  audience_sentiment?: string
+  candidate_angles?: string[]
+  timeline: string[]
+  platform_context: string[]
+  concrete_details: string[]
+  risk_flags: string[]
+  research_gap: string[]
+  sources: FactSource[]
+}
+
+/** WritingProject 创作主线：Phase 1 的步骤（前端临时状态，不落库）。 */
+export type WritingProjectStep =
+  | "topic"
+  | "research"
+  | "angle"
+  | "material"
+  | "structure"
+  | "draft"
+  | "review"
+  | "export"
+
+export interface WritingProjectSettings {
+  accountType: string
+  durationSeconds: number
+  tone: string
+  goal: string
+}
+
+export interface WritingProjectReviewCheck {
+  id: string
+  label: string
+  checked: boolean
+}
+
+/**
+ * Phase 1 WritingProject 状态聚合。
+ * 复用现有接口返回（PrepareDraftResponse），仅在前端内存中保存；
+ * 不新增数据库表，也不改 Alembic。
+ */
+export interface WritingProjectState {
+  id: string
+  topic: string
+  supplement: string
+  createdAt: string
+  updatedAt: string
+  step: WritingProjectStep
+  researchStatus: "idle" | "running" | "done" | "error"
+  researchError: string | null
+  research: PrepareResearchResponse | null
+  /** 角度是强制决策节点：只能“选择推荐角度”或“自定义角度”，必须产生 SelectedAngle。 */
+  angleMode: "recommended" | "custom"
+  selectedAngleId: string
+  customAngle: string
+  /** Phase 3：第二轮定向研究状态与素材卡。 */
+  materialStatus: "idle" | "running" | "done" | "error"
+  materialError: string | null
+  materialCards: MaterialCard[]
+  materialStopReason: string
+  materialGuidance: string
+  materialModel?: string | null
+  selectedMaterialKeys: string[]
+  materialNotes: string
+  structureMode: "recommended" | "generic"
+  selectedStructureId: string
+  /** Phase 3：结构推荐基于 SelectedAngle + SelectedMaterials。 */
+  structureRecommendations: StructureRecommendation[]
+  structureGeneric: StructureRecommendation | null
+  structureNote: string
+  structureStatus: "idle" | "loading" | "done" | "error"
+  structureError: string | null
+  settings: WritingProjectSettings
+  draftTitle: string
+  draftText: string
+  /** Phase 4：完整成稿生成状态与证据追踪。 */
+  draftStatus: "idle" | "running" | "done" | "error"
+  draftError: string | null
+  draftGenerationNote: string
+  draftModel?: string | null
+  titleCandidates: string[]
+  shotSuggestions: string[]
+  subtitleRhythm: string[]
+  commentCta: string
+  usedMaterialIds: string[]
+  usedClaimIds: string[]
+  materialGaps: MaterialGap[]
+  evidenceMap: ScriptEvidenceLink[]
+  evidenceCheck: EvidenceCheckResult | null
+  structureCoverage: string[]
+  draftVersions: Array<{
+    id: string
+    label: string
+    title: string
+    text: string
+    savedAt: string
+  }>
+  reviewNotes: string
+  reviewChecks: WritingProjectReviewCheck[]
+  exportedAt: string | null
+}
+
+export interface AngleCandidate {
+  id: string
+  name: string
+  thesis: string
+  reason: string
+  required_facts: string[]
+  risk_notes: string[]
+  /** Phase 2：角度卡片新增字段（后端为联网研究输出）。 */
+  supporting_materials?: string[]
+  missing_materials?: string[]
+  overlap_risk?: string
+  main_risks?: string[]
+  /** Phase 3：分类型的支撑依据。 */
+  evidence?: AngleEvidenceBundle
+}
+
+export type MaterialType =
+  | "fact"
+  | "quote"
+  | "opinion"
+  | "case"
+  | "data"
+  | "background"
+  | "comparison"
+
+/** Phase 3：第二轮 Angle-driven Research 产出的素材卡。 */
+export interface MaterialCard {
+  id: string
+  type: MaterialType
+  title: string
+  summary?: string
+  content: string
+  source?: string
+  publisher?: string
+  published_at?: string | null
+  source_url?: string
+  verification_status: "verified" | "uncertain" | "preview"
+  relevance_to_angle?: string
+  suggested_usage?: string
+  risk?: string
+  selected?: boolean
+}
+
+export interface MaterialResearchPayload {
+  topic: string
+  material_text?: string
+  source_url?: string
+  account_type: string
+  duration_seconds: number
+  tone: string
+  goal: string
+  selected_angle: string
+  angle_name?: string
+  angle_missing_evidence?: string[]
+  research_brief?: ResearchBrief | null
+}
+
+export interface MaterialResearchResponse {
+  materials: MaterialCard[]
+  generation_mode: "ai" | "fallback" | "blocked"
+  research_model?: string | null
+  guidance: string
+  stop_reason: string
+  reused_source_count: number
+}
+
+export interface StructureMaterialMapping {
+  step: string
+  material_ids: string[]
+  note: string
+}
+
+export interface StructureRecommendation {
+  id: string
+  name: string
+  kind: "skill" | "generic"
+  skeleton: string[]
+  hook_formula: string
+  emotion_rhythm: string
+  ending_formula: string
+  why_fits: string
+  material_mapping: StructureMaterialMapping[]
+  material_gaps: string[]
+  risk_notes: string[]
+}
+
+export interface StructureRecommendationPayload {
+  topic: string
+  selected_angle: string
+  materials: MaterialCard[]
+  account_type: string
+  duration_seconds: number
+  tone: string
+  goal: string
+  research_summary?: string
+}
+
+export interface StructureRecommendationResponse {
+  recommendations: StructureRecommendation[]
+  generic_structure: StructureRecommendation
+  generation_mode: "ai" | "fallback"
+  model?: string | null
+  note: string
+}
+
+export interface DraftOutline {
+  hook_task: string
+  key_facts: string[]
+  progression: string[]
+  turn: string
+  emotion: string
+  ending: string
+  source_map: string[]
+}
+
+export interface SelectionRecord {
+  angle_mode: "recommended" | "manual" | "custom" | "none"
+  selected_angle: string
+  skill_selection_mode: "recommended" | "manual" | "custom"
+  primary_skill_id?: string | null
+  primary_skill_version?: string | null
+  additional_skill_ids: string[]
+  user_overrides: string[]
+}
+
+export interface PrepareDraftPayload {
+  topic: string
+  material_text: string
+  source_url?: string
+  account_type: string
+  duration_seconds: number
+  tone: string
+  goal: string
+}
+
+export interface PrepareDraftResponse {
+  research_brief: ResearchBrief
+  angle_candidates: AngleCandidate[]
+  matched_skills: SkillMatch[]
+  generation_mode: "ai" | "fallback" | "blocked"
+  sources: FactSource[]
+}
+
+/**
+ * Phase 2：研究阶段响应。只包含研究简报与角度候选，
+ * 不包含任何 Skill / 结构匹配（结构匹配推迟到 SelectedAngle 之后）。
+ */
+export interface PrepareResearchResponse {
+  research_brief: ResearchBrief
+  angle_candidates: AngleCandidate[]
+  generation_mode: "ai" | "fallback" | "blocked"
+  research_model?: string | null
+}
+
 export type DraftInputType = "hotspot" | "outline" | "partial_script" | "script"
 
 export interface DraftInputPayload {
@@ -604,6 +941,12 @@ export interface DraftInputPayload {
   duration_seconds: number
   tone: string
   goal: string
+  material_text?: string
+  selected_angle?: string
+  angle_mode?: "recommended" | "manual" | "custom" | "none"
+  skill_selection_mode?: "recommended" | "manual" | "custom"
+  custom_instructions?: string[]
+  research_brief?: ResearchBrief | null
 }
 
 export interface DraftDiagnosis {
@@ -629,10 +972,31 @@ export interface DraftRewritePayload extends DraftInputPayload {
 }
 
 export interface FactSource {
+  /** Phase 3：来源 id，供逐条事实追溯。 */
+  id?: string
   title: string
   url: string
   publisher: string
   published_at?: string | null
+}
+
+/** 逐条可追溯的事实声明：哪一条事实由哪些来源支持。 */
+export interface FactClaim {
+  id: string
+  claim: string
+  source_ids: string[]
+  confidence: "high" | "medium" | "low"
+  verification_status: "verified" | "uncertain"
+  note: string
+}
+
+/** Angle 支撑依据按证据类型分开，避免把网友观点当事实。 */
+export interface AngleEvidenceBundle {
+  verified_fact_ids: string[]
+  verified_facts: string[]
+  opinions: string[]
+  examples: string[]
+  missing_evidence: string[]
 }
 
 export interface FactVerification {
@@ -655,6 +1019,9 @@ export interface DraftRewriteResponse {
   generation_model?: string | null
   generation_note?: string
   fact_verification: FactVerification
+  selected_angle: string
+  outline?: DraftOutline | null
+  selection_record: SelectionRecord
 }
 
 export interface DraftRewriteTask {

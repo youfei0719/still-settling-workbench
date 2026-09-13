@@ -1,23 +1,60 @@
-import { Archive, ClipboardCheck, Link2, Settings2 } from "lucide-react"
+import {
+  Archive,
+  ClipboardCheck,
+  FileText,
+  FolderOpen,
+  Link2,
+  Plus,
+  Settings2,
+} from "lucide-react"
 import type { ReactNode } from "react"
 
-export type PageKey = "link" | "analysis" | "templates" | "diagnostics"
+/**
+ * Phase 1 信息架构。
+ *
+ * 创作主线（默认首页）在前：
+ *   新建稿件 → 稿件项目
+ * 资产与高级能力在后：
+ *   结构库 / 参考稿库 → Skill 工厂 / 系统设置
+ *
+ * legacy 页面（link / analysis / templates / review）保留全部旧能力，
+ * 只通过「Skill 工厂」进入，不再出现在普通写稿导航里。
+ */
+export type PageKey =
+  | "create"
+  | "projects"
+  | "structures"
+  | "references"
+  | "factory"
+  | "settings"
+  | "link"
+  | "analysis"
+  | "templates"
+  | "review"
 
 const navItems: Array<{ key: PageKey; label: string; icon: ReactNode }> = [
-  { key: "link", label: "沉淀 Skill", icon: <Link2 size={18} /> },
+  { key: "create", label: "＋ 新建稿件", icon: <Plus size={18} /> },
+  { key: "projects", label: "稿件项目", icon: <FolderOpen size={18} /> },
 ]
 
 const assetItems: Array<{ key: PageKey; label: string; icon: ReactNode }> = [
-  { key: "templates", label: "写作 Skill 库", icon: <Archive size={17} /> },
+  { key: "structures", label: "结构库", icon: <Archive size={17} /> },
+  { key: "references", label: "参考稿库", icon: <FileText size={17} /> },
 ]
 
 const advancedItems: Array<{ key: PageKey; label: string; icon: ReactNode }> = [
-  { key: "diagnostics", label: "系统诊断", icon: <Settings2 size={17} /> },
+  { key: "factory", label: "Skill 工厂", icon: <Link2 size={17} /> },
+  { key: "settings", label: "系统设置", icon: <Settings2 size={17} /> },
 ]
 
+const factoryChildPages: PageKey[] = ["link", "analysis", "templates", "review"]
+
 function isNavItemActive(activePage: PageKey, itemKey: PageKey) {
-  if (itemKey === "link")
-    return activePage === "link" || activePage === "analysis"
+  if (itemKey === "factory") {
+    return (
+      activePage === "factory" || factoryChildPages.includes(activePage)
+    )
+  }
   return activePage === itemKey
 }
 
@@ -41,11 +78,11 @@ export function AppShell({
           />
           <div>
             <strong>依旧沉淀</strong>
-            <span>短视频写作 Skill 工作台</span>
+            <span>营销内容创作工作台</span>
           </div>
         </div>
 
-        <nav className="nav-list" aria-label="主流程导航">
+        <nav className="nav-list" aria-label="创作主线导航">
           {navItems.map((item) => (
             <button
               type="button"
@@ -66,7 +103,7 @@ export function AppShell({
               <button
                 type="button"
                 key={item.key}
-                className={`nav-item nav-item-secondary ${activePage === item.key ? "nav-item-active" : ""}`}
+                className={`nav-item nav-item-secondary ${isNavItemActive(activePage, item.key) ? "nav-item-active" : ""}`}
                 onClick={() => onNavigate(item.key)}
               >
                 {item.icon}
@@ -83,7 +120,7 @@ export function AppShell({
               <button
                 type="button"
                 key={item.key}
-                className={`nav-item nav-item-secondary ${activePage === item.key ? "nav-item-active" : ""}`}
+                className={`nav-item nav-item-secondary ${isNavItemActive(activePage, item.key) ? "nav-item-active" : ""}`}
                 onClick={() => onNavigate(item.key)}
               >
                 {item.icon}
@@ -96,7 +133,7 @@ export function AppShell({
         <div className="sidebar-footer">
           <span>主路径</span>
           <strong>
-            从可验证来源沉淀可复用写法，经过质量复核后交付给团队与 Codex。
+            从一个选题走到完整成稿；优秀稿件再反向沉淀为结构与参考稿。
           </strong>
         </div>
       </aside>
@@ -104,23 +141,25 @@ export function AppShell({
       <div className="workspace">
         <header className="topbar">
           <div>
-            <p>Skill 资产主线</p>
-            <strong>
-              {"授权来源 -> 真实稿件 -> 结构沉淀 -> 质量复核 -> 正式版本 -> 发布与加载"}
-            </strong>
+            <p>创作主线</p>
+            <strong>选题 → 研究 → 角度 → 素材 → 结构 → 成稿 → 审稿 → 导出</strong>
           </div>
           <div className="task-strip" aria-label="当前流程状态">
             <span
-              className={`task-pill ${activePage === "link" || activePage === "analysis" ? "task-done" : ""}`}
+              className={`task-pill ${activePage === "create" ? "task-done" : ""}`}
             >
-              沉淀 Skill
+              新建稿件
             </span>
             <span
-              className={`task-pill ${activePage === "templates" ? "task-done" : ""}`}
+              className={`task-pill ${activePage === "projects" ? "task-done" : ""}`}
             >
-              团队 Skill 库
+              稿件项目
             </span>
-            <span className="task-pill">Codex 同步</span>
+            <span
+              className={`task-pill ${isNavItemActive(activePage, "factory") ? "task-done" : ""}`}
+            >
+              Skill 工厂
+            </span>
           </div>
           <div className="team-chip">
             <ClipboardCheck size={16} />

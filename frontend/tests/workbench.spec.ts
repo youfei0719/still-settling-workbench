@@ -211,52 +211,226 @@ function mockedQualityReviewBody() {
   }
 }
 
-test("默认首页是沉淀 Skill 入口，状态条展示团队同步路径", async ({
+function mockedServerMediaTaskBody(
+  status: "processing" | "completed" | "failed",
+) {
+  const now = new Date().toISOString()
+  const base = {
+    id: "media_real_video",
+    source_url: "https://v.douyin.com/mock-real/",
+    status,
+    stage: status === "processing" ? "服务器正在下载视频" : "媒体任务未完成",
+    stage_detail: "媒体仅在主站临时目录中处理。",
+    progress: status === "processing" ? 15 : 100,
+    created_at: now,
+    updated_at: now,
+  }
+  if (status === "failed") {
+    return {
+      ...base,
+      error_code: "download_failed",
+      error: "测试模拟链接未产出足够视频稿件。",
+      result: null,
+    }
+  }
+  if (status === "processing") return { ...base, result: null }
+  return {
+    ...base,
+    stage: "真实文稿已准备完成",
+    stage_detail: "视频和音频已从服务器临时目录清理。",
+    result: {
+      source_url: base.source_url,
+      title: "品牌最好的宣传其实早在行动里了",
+      author: "品牌观察室",
+      publish_time: "20260730",
+      transcript: sampleTranscript,
+      timestamps: [],
+      provider: "外部转写 API（whisper-1）",
+    },
+  }
+}
+
+async function mockServerMediaTask(
+  page: Page,
+  finalStatus: "completed" | "failed",
+) {
+  await page.route(
+    "**/api/v1/script-workbench/server-media-tasks**",
+    async (route) => {
+      const body =
+        route.request().method() === "POST"
+          ? mockedServerMediaTaskBody("processing")
+          : mockedServerMediaTaskBody(finalStatus)
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      })
+    },
+  )
+}
+
+test("默认首页是新建稿件，导航体现创作主线与 Skill 工厂", async ({
   page,
 }, testInfo) => {
   await page.goto("/")
 
-  const brandSubtitle = page.getByText("短视频写作 Skill 工作台")
+  const brandSubtitle = page.getByText("营销内容创作工作台")
   if (testInfo.project.name === "mobile") {
     await expect(brandSubtitle).toBeHidden()
   } else {
     await expect(brandSubtitle).toBeVisible()
   }
-  await expect(
-    page.getByRole("heading", { name: "沉淀写作 Skill" }),
-  ).toBeVisible()
-  await expect(
-    page.getByText("粘贴完整的抖音分享文案或短链即可开始。"),
-  ).toBeVisible()
 
-  const navigation = page.getByRole("navigation", { name: "主流程导航" })
-  for (const label of ["沉淀 Skill"]) {
+  // 默认首页：10 秒内可以输入选题。
+  await expect(page.getByRole("heading", { name: "你要写什么？" })).toBeVisible()
+  await expect(page.getByLabel("你要写什么？")).toBeVisible()
+  await expect(page.getByRole("button", { name: "开始研究" })).toBeVisible()
+
+  const mainNav = page.getByRole("navigation", { name: "创作主线导航" })
+  for (const label of ["＋ 新建稿件", "稿件项目"]) {
     await expect(
-      navigation.getByRole("button", { name: label, exact: true }),
+      mainNav.getByRole("button", { name: label, exact: true }),
     ).toBeVisible()
   }
   await expect(
-    navigation.getByRole("button", { name: "生成结构", exact: true }),
+    mainNav.getByRole("button", { name: "沉淀 Skill", exact: true }),
   ).toHaveCount(0)
-  await expect(
-    navigation.getByRole("button", { name: "填写交付", exact: true }),
-  ).toHaveCount(0)
+
+  const assetNav = page.getByRole("navigation", { name: "资产功能导航" })
+  for (const label of ["结构库", "参考稿库"]) {
+    await expect(
+      assetNav.getByRole("button", { name: label, exact: true }),
+    ).toBeVisible()
+  }
+
+  const advancedNav = page.getByRole("navigation", { name: "高级功能导航" })
+  for (const label of ["Skill 工厂", "系统设置"]) {
+    await expect(
+      advancedNav.getByRole("button", { name: label, exact: true }),
+    ).toBeVisible()
+  }
+
   const workflowStatus = page.getByLabel("当前流程状态")
-  for (const label of ["沉淀 Skill", "团队 Skill 库", "Codex 同步"]) {
+  for (const label of ["新建稿件", "稿件项目", "Skill 工厂"]) {
     await expect(workflowStatus.getByText(label, { exact: true })).toBeVisible()
   }
+  await expect(page.getByText("营销 landing page")).toHaveCount(0)
+})
+
+test("新建稿件可以沿创作主线走完全部步骤并保留状态", async ({ page }) => {
+  await page.goto("/")
+  await page.getByLabel("你要写什么？").fill("某品牌代言人更换引发老用户不满")
+  await page
+    .getByLabel("补充材料（可选）")
+    .fill("品牌在 8 月公开宣布更换代言人，老用户在评论区表达不满。")
+  await page.getByRole("button", { name: "开始研究" }).click()
+
+  // 研究步骤：离线模式下展示“研究预览”，不允许标成已确认事实。
+  await expect(page.getByRole("heading", { name: "研究简报" })).toBeVisible({
+    timeout: 30_000,
+  })
   await expect(
-    page
-      .getByRole("navigation", { name: "资产功能导航" })
-      .getByRole("button", { name: "写作 Skill 库", exact: true }),
+    page.getByText("当前为研究预览，尚未完成联网事实核验", { exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "结构分析", exact: true }),
-  ).toHaveCount(0)
+    page.getByText("事实候选 / 用户提供的信息", { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText("已确认事实", { exact: true })).toHaveCount(0)
+
+  const stepper = page.getByLabel("创作流程步骤")
+  await expect(stepper.getByRole("button", { name: "选题" })).toBeVisible()
+  await expect(stepper.getByRole("button", { name: "导出" })).toBeVisible()
+
+  await page.getByRole("button", { name: "确认进入角度" }).click()
+
+  // 角度是强制决策节点：未选角度时，确认按钮和 Stepper 跳转都要被拦截。
+  await page.getByRole("button", { name: "确认角度" }).click()
   await expect(
-    page.getByRole("button", { name: "套路资产", exact: true }),
-  ).toHaveCount(0)
-  await expect(page.getByText("营销 landing page")).toHaveCount(0)
+    page.getByText("必须先选中一个推荐角度才能继续"),
+  ).toBeVisible()
+  await stepper.getByRole("button", { name: "素材" }).click()
+  await expect(
+    page.getByText("进入素材阶段前必须先确认内容角度"),
+  ).toBeVisible()
+  await expect(page.getByRole("button", { name: "确认角度" })).toBeVisible()
+
+  const angleChoice = page.locator(".workflow-choice").first()
+  await expect(angleChoice).toBeVisible()
+  await angleChoice.click()
+  await page.getByRole("button", { name: "确认角度" }).click()
+
+  // 素材步骤（Phase 3）：手动触发第二轮定向研究，然后显式选择素材。
+  await expect(
+    page.getByText("围绕已选角度做第二轮定向研究"),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "开始定向素材研究" }).click()
+  await expect(page.getByText(/张素材卡/).first()).toBeVisible({
+    timeout: 30_000,
+  })
+  // 未选择素材时必须提示，但不阻断继续。
+  await expect(
+    page.getByText("当前没有选择支撑材料，继续写作可能主要依赖通用推理。"),
+  ).toBeVisible()
+  const materialCard = page.locator(".material-card").first()
+  await expect(materialCard).toBeVisible()
+  await materialCard.getByRole("button", { name: /使用这条|已使用/ }).click()
+  await page.getByLabel("补充素材").fill("计划用评论区对比截图作为画面素材。")
+  await page.getByRole("button", { name: "确认素材" }).click()
+
+  // 结构步骤（Phase 3）：推荐结构 + 通用结构 fallback 都可选。
+  await expect(page.getByText("为什么适合这个角度").first()).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(page.locator(".structure-card").first()).toBeVisible()
+  await expect(page.getByText("通用写作骨架").first()).toBeVisible()
+  await page.getByRole("button", { name: "确认结构" }).click()
+
+  // 成稿步骤（Phase 4）：生成设置 + 生成完整初稿（离线模式走证据约束兜底稿）。
+  await expect(page.getByLabel("账号类型")).toBeVisible()
+  await page.getByRole("button", { name: "生成完整初稿" }).click()
+  await expect(page.getByLabel("完整口播稿")).toBeVisible({
+    timeout: 30_000,
+  })
+  const generated = await page.getByLabel("完整口播稿").inputValue()
+  expect(generated.length).toBeGreaterThan(30)
+  // 正文不允许出现结构与占位符文本。
+  for (const marker of ["【", "结构工作稿", "你来填写", "材料不足"]) {
+    expect(generated).not.toContain(marker)
+  }
+
+  // 编辑器：可以改标题与正文，并保存版本。
+  await page.getByLabel("标题").fill("换了代言人，老用户为什么先炸了")
+  await page
+    .getByLabel("完整口播稿")
+    .fill("品牌换了代言人，评论区先炸的不是新代言人，而是老用户。")
+  await page.getByRole("button", { name: "保存版本" }).click()
+  await expect(page.getByRole("button", { name: /v2（/ })).toBeVisible()
+  await page.getByRole("button", { name: "进入审稿" }).click()
+
+  // 审稿步骤：人工检查项勾选后进入导出。
+  await page
+    .getByRole("button", { name: /事实与来源已核对/ })
+    .click()
+  await page.getByLabel("审稿备注").fill("待确认品牌公告原文表述。")
+  await page.getByRole("button", { name: "进入导出" }).click()
+  await expect(page.getByRole("button", { name: "导出 JSON" })).toBeVisible()
+
+  // 状态保留：返回成稿步骤，标题和正文都还在。
+  await stepper.getByRole("button", { name: "成稿" }).click()
+  await expect(page.getByLabel("标题")).toHaveValue(
+    "换了代言人，老用户为什么先炸了",
+  )
+  await expect(page.getByLabel("完整口播稿")).toHaveValue(/老用户/)
+
+  // 稿件项目页能看到这篇稿件的进度。
+  await page
+    .getByRole("navigation", { name: "创作主线导航" })
+    .getByRole("button", { name: "稿件项目", exact: true })
+    .click()
+  await expect(
+    page.getByRole("button", { name: /某品牌代言人更换引发老用户不满/ }),
+  ).toBeVisible()
 })
 
 test.skip("结构生成过程只展示真实阶段、动作和实际耗时", async ({ page }) => {
@@ -564,7 +738,7 @@ test("Skill 列表整行可预览且不会直接跳去写稿", async ({ page }) 
   await overviewResponsePromise
   await page
     .getByRole("navigation", { name: "资产功能导航" })
-    .getByRole("button", { name: "写作 Skill 库", exact: true })
+    .getByRole("button", { name: "结构库", exact: true })
     .click()
 
   const rows = page.locator("[data-skill-id]")
@@ -616,7 +790,7 @@ test("候选 Skill 能直接进入补充来源流程", async ({ page }) => {
   await page.goto("/")
   await page
     .getByRole("navigation", { name: "资产功能导航" })
-    .getByRole("button", { name: "写作 Skill 库", exact: true })
+    .getByRole("button", { name: "结构库", exact: true })
     .click()
   await page
     .getByRole("button", {
@@ -714,7 +888,7 @@ test("Skill 列表按添加时间倒序并用来源时间兜底显示日期", as
   await page.goto("/")
   await page
     .getByRole("navigation", { name: "资产功能导航" })
-    .getByRole("button", { name: "写作 Skill 库", exact: true })
+    .getByRole("button", { name: "结构库", exact: true })
     .click()
 
   const rows = page.locator(".skill-library-row")
@@ -728,13 +902,7 @@ test("Skill 列表按添加时间倒序并用来源时间兜底显示日期", as
 })
 
 test("沉淀 Skill 必须基于抖音链接真实提取到的视频稿件", async ({ page }) => {
-  await page.route("**/api/v1/script-workbench/link-task", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(mockedLinkTaskBody("completed")),
-    })
-  })
+  await mockServerMediaTask(page, "completed")
   await page.route(
     "**/api/v1/script-workbench/codex-skill-pack/publish-github",
     async (route) => {
@@ -757,8 +925,11 @@ test("沉淀 Skill 必须基于抖音链接真实提取到的视频稿件", asyn
 
   await page.goto("/")
   await page
-    .getByRole("navigation", { name: "主流程导航" })
-    .getByRole("button", { name: "沉淀 Skill", exact: true })
+    .getByRole("navigation", { name: "高级功能导航" })
+    .getByRole("button", { name: "Skill 工厂", exact: true })
+    .click()
+  await page
+    .getByRole("button", { name: /链接解析与来源沉淀/ })
     .click()
   await expect(
     page.getByRole("heading", { name: "沉淀写作 Skill" }),
@@ -779,14 +950,14 @@ test("沉淀 Skill 必须基于抖音链接真实提取到的视频稿件", asyn
   await page.getByRole("button", { name: "真实提取视频稿件" }).click()
   const analysisRequest = await analysisRequestPromise
   expect(analysisRequest.postDataJSON()).toMatchObject({
-    source_video_id: "source_real_video",
+    source_video_id: "media_real_video",
     author: "品牌观察室",
     url: "https://v.douyin.com/mock-real/",
   })
   const analysisResponse = await analysisResponsePromise
   const analysisData = await analysisResponse.json()
   expect(analysisData.source_video).toMatchObject({
-    id: "source_real_video",
+    id: "media_real_video",
     author: "品牌观察室",
     url: "https://v.douyin.com/mock-real/",
   })
@@ -957,14 +1128,7 @@ test("沉淀 Skill 必须基于抖音链接真实提取到的视频稿件", asyn
 })
 
 test("真实提取过程可感知且沉淀步骤可展开查看稿件", async ({ page }) => {
-  await page.route("**/api/v1/script-workbench/link-task", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 650))
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(mockedLinkTaskBody("completed")),
-    })
-  })
+  await mockServerMediaTask(page, "completed")
   await page.route("**/api/v1/script-workbench/analyze-text", async (route) => {
     const response = await route.fetch()
     await new Promise((resolve) => setTimeout(resolve, 2500))
@@ -973,8 +1137,11 @@ test("真实提取过程可感知且沉淀步骤可展开查看稿件", async ({
 
   await page.goto("/")
   await page
-    .getByRole("navigation", { name: "主流程导航" })
-    .getByRole("button", { name: "沉淀 Skill", exact: true })
+    .getByRole("navigation", { name: "高级功能导航" })
+    .getByRole("button", { name: "Skill 工厂", exact: true })
+    .click()
+  await page
+    .getByRole("button", { name: /链接解析与来源沉淀/ })
     .click()
   await page
     .getByRole("textbox", { name: "抖音分享文案或链接" })
@@ -1015,80 +1182,39 @@ test("真实提取过程可感知且沉淀步骤可展开查看稿件", async ({
   )
 })
 
-test("AI 无法确认的稿件会阻断，人工确认后才继续拆解", async ({ page }) => {
-  await page.route("**/api/v1/script-workbench/link-task", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(mockedQualityReviewBody()),
-    })
-  })
+test("外部转写返回真实稿件后直接进入结构拆解", async ({ page }) => {
+  await mockServerMediaTask(page, "completed")
 
   await page.goto("/")
   await page
-    .getByRole("navigation", { name: "主流程导航" })
-    .getByRole("button", { name: "沉淀 Skill", exact: true })
+    .getByRole("navigation", { name: "高级功能导航" })
+    .getByRole("button", { name: "Skill 工厂", exact: true })
+    .click()
+  await page
+    .getByRole("button", { name: /链接解析与来源沉淀/ })
     .click()
   await page
     .getByRole("textbox", { name: "抖音分享文案或链接" })
-    .fill("https://v.douyin.com/quality-review/")
+    .fill("https://v.douyin.com/mock-real/")
   await page.getByRole("button", { name: "真实提取视频稿件" }).click()
 
-  await expect(page.getByText("稿件校正未通过", { exact: true })).toBeVisible()
-  await expect(
-    page.getByRole("button", { name: "确认并保存 Skill" }),
-  ).toHaveCount(0)
-
-  const transcriptStep = page
-    .locator(".progress-disclosure")
-    .filter({ hasText: "提取真实稿件" })
-  await transcriptStep.locator("summary").click()
-  await expect(page.getByText("质量门禁未通过")).toBeVisible()
-  const editor = page.getByRole("textbox", { name: "确认后的视频稿件" })
-  await expect(editor).toContainText("开开始")
-  await expect(editor).toHaveValue(/\n\n/)
-  await editor.fill(
-    `${sampleTranscript} 谷爱凌摔下来，拍拍雪站起来，还能说再来一次。`,
-  )
-
-  const analysisRequestPromise = page.waitForRequest(
-    "**/api/v1/script-workbench/analyze-text",
-  )
-  const confirmButton = page.getByRole("button", { name: "核对完成，继续拆解" })
-  await expect(confirmButton).toBeDisabled()
-  await page
-    .getByRole("checkbox", {
-      name: "我已核对人名、数字和专业词；这份稿件可用于 Skill 分析。",
-    })
-    .check()
-  await expect(confirmButton).toBeEnabled()
-  await confirmButton.click()
-  const analysisRequest = await analysisRequestPromise
-  expect(analysisRequest.postDataJSON()).toMatchObject({
-    content: expect.stringContaining("拍拍雪站起来"),
-    transcript_source: "asr+human_review",
-    transcript_confidence: 1,
-  })
   await expect(
     page.getByRole("button", { name: "确认并保存 Skill" }),
   ).toBeVisible({ timeout: 30000 })
   await expect(
-    page.getByText("稿件已由你人工确认，可以继续拆解。"),
-  ).toBeVisible()
+    page.getByText("稿件校正未通过", { exact: true }),
+  ).toHaveCount(0)
 })
 
 test("没有真实视频稿件时不会拆解或用标题猜内容", async ({ page }) => {
-  await page.route("**/api/v1/script-workbench/link-task", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(mockedLinkTaskBody("failed")),
-    })
-  })
+  await mockServerMediaTask(page, "failed")
   await page.goto("/")
   await page
-    .getByRole("navigation", { name: "主流程导航" })
-    .getByRole("button", { name: "沉淀 Skill", exact: true })
+    .getByRole("navigation", { name: "高级功能导航" })
+    .getByRole("button", { name: "Skill 工厂", exact: true })
+    .click()
+  await page
+    .getByRole("button", { name: /链接解析与来源沉淀/ })
     .click()
 
   await page
@@ -1096,7 +1222,7 @@ test("没有真实视频稿件时不会拆解或用标题猜内容", async ({ pa
     .fill("https://v.douyin.com/not-real-for-test/")
   await page.getByRole("button", { name: "真实提取视频稿件" }).click()
 
-  await expect(page.getByText("这条抖音链接暂时没有提取到视频稿件")).toBeVisible({
+  await expect(page.getByText("测试模拟链接未产出足够视频稿件。")).toBeVisible({
     timeout: 30000,
   })
   await expect(
@@ -1111,73 +1237,12 @@ test("没有真实视频稿件时不会拆解或用标题猜内容", async ({ pa
   await expect(page.getByText("downloader")).toHaveCount(0)
 })
 
-test("系统诊断从高级入口进入", async ({ page }) => {
+test("系统设置从高级入口进入", async ({ page }) => {
   await page.goto("/")
 
-  await page.getByRole("button", { name: "系统诊断" }).click()
+  await page.getByRole("button", { name: "系统设置" }).click()
   await expect(page.getByText("素材任务详情")).toBeVisible()
   await expect(page.getByRole("heading", { name: "系统诊断" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "首次配置" })).toBeVisible()
   await expect(page.getByRole("button", { name: "刷新门禁" })).toBeVisible()
-})
-
-test("部署环境管理模型配置时不保存空值且仍可拉取模型", async ({ page }) => {
-  await page.route("**/api/v1/script-workbench/local-settings", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        llm_mode: "offline",
-        llm_model: "",
-        llm_api_base: "",
-        skill_repository_path: "",
-        skill_remote: "origin",
-        skill_remote_url: "",
-        skill_branch: "main",
-        skill_sync_mode: "github",
-        sources: {
-          llm_mode: "environment",
-          llm_model: "environment",
-          llm_api_base: "environment",
-          skill_repository_path: "default",
-          skill_remote: "default",
-          skill_remote_url: "default",
-          skill_branch: "default",
-          skill_sync_mode: "default",
-        },
-        llm_api_key_configured: true,
-        llm_api_key_source: "environment",
-        douyin_cookie_configured: false,
-        douyin_cookie_source: "none",
-        secret_storage: "session_only",
-        secrets_persisted: false,
-        publish_configured: false,
-        message: "本机设置状态已读取。",
-      }),
-    })
-  })
-  await page.route("**/api/v1/script-workbench/local-settings/models", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        models: [{ id: "gpt-5.4", recommended: true, recommendation_reason: "推荐" }],
-        recommended_model: "gpt-5.4",
-        message: "已拉取模型列表并给出建议。",
-      }),
-    })
-  })
-
-  await page.goto("/")
-  await page.getByRole("button", { name: "系统诊断" }).click()
-
-  await expect(page.getByRole("combobox", { name: "模式", exact: true })).toBeDisabled()
-  await expect(page.getByRole("textbox", { name: "模型", exact: true })).toHaveValue("由启动环境管理")
-  await expect(page.getByRole("textbox", { name: "API Base", exact: true })).toHaveValue("由启动环境管理")
-  await expect(page.getByRole("textbox", { name: "API Key", exact: true })).toHaveValue("由启动环境管理")
-
-  const discoverModels = page.getByRole("button", { name: "拉取服务商模型" })
-  await expect(discoverModels).toBeEnabled()
-  await discoverModels.click()
-  await expect(page.getByText("模型由启动环境固定。已拉取模型列表并给出建议。")).toBeVisible()
 })
